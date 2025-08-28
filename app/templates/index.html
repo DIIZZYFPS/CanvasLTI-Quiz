@@ -3,14 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/output.css') }}">
     <title>Canvas LTI Quiz</title>
 </head>
 <body>
     <h1>Welcome to the Canvas LTI Quiz</h1>
-    <form action="/submit" method="post">
+    <form action="/submit" method="post" class="space-y-4">
         <label for="question">Question:</label>
-        <input type="text" id="question" name="question" required>
-        <button type="submit">Submit</button>
+        <input type="text" id="question" name="question" required class="border p-2">
+        <button type="submit" class="bg-blue-500 text-white p-2">Submit</button>
     </form>
 </body>
 </html>
