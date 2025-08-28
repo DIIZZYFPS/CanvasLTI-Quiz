@@ -1,0 +1,384 @@
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Textarea } from "@/components/ui/textarea";
+import { Separator } from "@/components/ui/separator";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { useState } from "react";
+import { Upload, FileText, Download, CheckCircle, Clock, AlertCircle, Eye, X } from "lucide-react";
+
+const Dashboard = () => {
+  const [conversionStatus, setConversionStatus] = useState<'idle' | 'processing' | 'complete' | 'error'>('idle');
+  const [progress, setProgress] = useState(0);
+  const [quizContent, setQuizContent] = useState("");
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewData, setPreviewData] = useState<any[]>([]);
+  const [exportType, setExportType] = useState<'qti' | 'canvas'>('qti');
+
+  // Mock function to parse questions from text
+  const parseQuestions = (content: string) => {
+    const questions = [];
+    const lines = content.split('\n').filter(line => line.trim());
+    let currentQuestion = null;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      
+      if (line.includes('?') || line.startsWith('Essay:') || line.startsWith('SA:')) {
+        if (currentQuestion) questions.push(currentQuestion);
+        
+        let type = 'multiple-choice';
+        if (line.includes('(T/F)') || line.includes('True/False')) type = 'true-false';
+        else if (line.startsWith('Essay:') || line.includes('[Essay]')) type = 'essay';
+        else if (line.startsWith('SA:') || line.includes('[Short Answer]')) type = 'short-answer';
+        else if (line.includes('_____')) type = 'fill-blank';
+        
+        currentQuestion = {
+          id: questions.length + 1,
+          type,
+          question: line.replace('Essay:', '').replace('SA:', '').trim(),
+          options: [],
+          answer: null
+        };
+      } else if (line.match(/^[A-D]\)/)) {
+        currentQuestion?.options.push(line);
+      } else if (line.startsWith('Answer:')) {
+        if (currentQuestion) currentQuestion.answer = line.replace('Answer:', '').trim();
+      }
+    }
+    
+    if (currentQuestion) questions.push(currentQuestion);
+    return questions.length ? questions : [
+      { id: 1, type: 'multiple-choice', question: 'Sample question parsed from your content', options: ['A) Option 1', 'B) Option 2'], answer: 'A' }
+    ];
+  };
+
+  const handleConvert = async (type: 'qti' | 'canvas') => {
+    setExportType(type);
+    setConversionStatus('processing');
+    setProgress(0);
+
+    // Simulate conversion progress
+    const interval = setInterval(() => {
+      setProgress(prev => {
+        if (prev >= 100) {
+          clearInterval(interval);
+          setConversionStatus('complete');
+          // Parse questions and show preview
+          const parsed = parseQuestions(quizContent);
+          setPreviewData(parsed);
+          setShowPreview(true);
+          return 100;
+        }
+        return prev + 10;
+      });
+    }, 200);
+  };
+
+  const handleFinalExport = () => {
+    setShowPreview(false);
+    // Here you would actually download/export the file
+    console.log(`Exporting ${previewData.length} questions as ${exportType}`);
+  };
+
+  const getStatusIcon = () => {
+    switch (conversionStatus) {
+      case 'processing': return <Clock className="w-4 h-4" />;
+      case 'complete': return <CheckCircle className="w-4 h-4" />;
+      case 'error': return <AlertCircle className="w-4 h-4" />;
+      default: return <FileText className="w-4 h-4" />;
+    }
+  };
+
+  const getStatusColor = () => {
+    switch (conversionStatus) {
+      case 'processing': return 'bg-primary';
+      case 'complete': return 'bg-success';
+      case 'error': return 'bg-destructive';
+      default: return 'bg-muted';
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-subtle">
+      {/* Header */}
+      <header className="border-b bg-card/80 backdrop-blur-sm sticky top-0 z-10">
+        <div className="container mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-primary rounded-lg flex items-center justify-center">
+                <FileText className="w-6 h-6 text-primary-foreground" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold">Quiz to QTI Converter</h1>
+                <p className="text-sm text-muted-foreground">Convert Canvas quiz questions to QTI format</p>
+              </div>
+            </div>
+            <Badge variant="secondary" className="font-medium">
+              Canvas LTI Tool
+            </Badge>
+          </div>
+        </div>
+      </header>
+
+      <main className="container mx-auto px-6 py-8 max-w-6xl">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Input Section */}
+          <div className="lg:col-span-2 space-y-6">
+            <Card className="shadow-card">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Upload className="w-5 h-5" />
+                  Input Quiz Questions
+                </CardTitle>
+                <CardDescription>
+                  Paste your Canvas quiz questions or upload a file to convert to QTI format
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex justify-center">
+                  <Button variant="outline" className="h-24 w-full max-w-xs border-dashed border-2 hover:bg-muted/50">
+                    <div className="text-center">
+                      <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+                      <p className="text-sm font-medium">Upload File</p>
+                      <p className="text-xs text-muted-foreground">CSV, TXT, JSON</p>
+                    </div>
+                  </Button>
+                </div>
+                
+                <Separator />
+                
+                <div className="space-y-3">
+                  <label htmlFor="quiz-content" className="text-sm font-medium">
+                    Paste quiz content directly:
+                  </label>
+                  <Textarea
+                    id="quiz-content"
+                    placeholder="Paste your quiz questions here...&#10;&#10;Example Multiple Choice:&#10;What is the capital of France?&#10;A) London&#10;B) Berlin&#10;C) Paris&#10;D) Madrid&#10;Answer: C&#10;&#10;Example True/False:&#10;The Earth is flat. (T/F)&#10;Answer: False"
+                    className="min-h-[200px] border-input-border focus:ring-2 focus:ring-primary"
+                    value={quizContent}
+                    onChange={(e) => setQuizContent(e.target.value)}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Conversion Controls */}
+            <Card className="shadow-card">
+              <CardHeader>
+                <CardTitle>Conversion Settings</CardTitle>
+                <CardDescription>Configure your QTI export preferences</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Button 
+                    onClick={() => handleConvert('qti')}
+                    disabled={!quizContent.trim() || conversionStatus === 'processing'}
+                    className="bg-gradient-primary hover:shadow-glow transition-all duration-300"
+                  >
+                    Export to QTI ZIP
+                  </Button>
+                  <Button 
+                    onClick={() => handleConvert('canvas')}
+                    disabled={!quizContent.trim() || conversionStatus === 'processing'}
+                    variant="outline"
+                    className="border-primary text-primary hover:bg-primary hover:text-primary-foreground"
+                  >
+                    Export to Canvas
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Status & Output Section */}
+          <div className="space-y-6">
+            {/* Status Card */}
+            <Card className="shadow-card">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  {getStatusIcon()}
+                  Conversion Status
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className={`p-4 rounded-lg ${getStatusColor()}/10 border border-current/20`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className={`w-2 h-2 rounded-full ${getStatusColor()}`} />
+                    <span className="font-medium capitalize">{conversionStatus}</span>
+                  </div>
+                  {conversionStatus === 'processing' && (
+                    <Progress value={progress} className="mt-2" />
+                  )}
+                  {conversionStatus === 'complete' && (
+                    <p className="text-sm text-muted-foreground">
+                      Successfully converted to QTI format
+                    </p>
+                  )}
+                </div>
+
+                {conversionStatus === 'complete' && (
+                  <div className="space-y-3">
+                    <Button 
+                      onClick={() => setShowPreview(true)}
+                      variant="default" 
+                      className="w-full bg-gradient-accent"
+                    >
+                      <Eye className="w-4 h-4 mr-2" />
+                      View Preview
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Formatting Instructions */}
+            <Card className="shadow-card">
+              <CardHeader>
+                <CardTitle>Formatting Instructions</CardTitle>
+                <CardDescription>
+                  Format your questions according to these guidelines for automatic type detection
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4 text-sm">
+                  <div className="space-y-2">
+                    <h4 className="font-medium text-primary">Multiple Choice</h4>
+                    <div className="bg-muted/30 p-3 rounded-lg">
+                      <p className="mb-2">List options with A) B) C) D) and indicate the correct answer:</p>
+                      <pre className="text-xs text-muted-foreground whitespace-pre-wrap">What is 2+2?
+A) 3
+B) 4
+C) 5
+D) 6
+Answer: B</pre>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <h4 className="font-medium text-primary">True/False</h4>
+                    <div className="bg-muted/30 p-3 rounded-lg">
+                      <p className="mb-2">End question with (T/F) or True/False:</p>
+                      <pre className="text-xs text-muted-foreground whitespace-pre-wrap">The Earth is round. (T/F)
+Answer: True</pre>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <h4 className="font-medium text-primary">Short Answer</h4>
+                    <div className="bg-muted/30 p-3 rounded-lg">
+                      <p className="mb-2">Start with "SA:" or end with [Short Answer]:</p>
+                      <pre className="text-xs text-muted-foreground whitespace-pre-wrap">SA: What year did WWII end?
+Answer: 1945</pre>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <h4 className="font-medium text-primary">Essay Questions</h4>
+                    <div className="bg-muted/30 p-3 rounded-lg">
+                      <p className="mb-2">Start with "Essay:" or end with [Essay]:</p>
+                      <pre className="text-xs text-muted-foreground whitespace-pre-wrap">Essay: Explain the causes of World War I.
+Points: 10</pre>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <h4 className="font-medium text-primary">Fill in the Blank</h4>
+                    <div className="bg-muted/30 p-3 rounded-lg">
+                      <p className="mb-2">Use _____ for blanks:</p>
+                      <pre className="text-xs text-muted-foreground whitespace-pre-wrap">The capital of France is _____.
+Answer: Paris</pre>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </main>
+
+      {/* Preview Dialog */}
+      <Dialog open={showPreview} onOpenChange={setShowPreview}>
+        <DialogContent className="max-w-4xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="w-5 h-5" />
+              Preview Questions ({previewData.length} questions)
+            </DialogTitle>
+            <DialogDescription>
+              Review your converted questions before exporting to {exportType.toUpperCase()}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <ScrollArea className="h-[50vh] pr-4">
+            <div className="space-y-4">
+              {previewData.map((question, index) => (
+                <Card key={question.id} className="border-l-4 border-l-primary">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <Badge variant="secondary" className="text-xs">
+                        Question {index + 1} - {question.type.replace('-', ' ').toUpperCase()}
+                      </Badge>
+                      <Badge variant="outline" className="text-xs">
+                        {question.type}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-0 space-y-3">
+                    <p className="font-medium">{question.question}</p>
+                    
+                    {question.options.length > 0 && (
+                      <div className="space-y-1">
+                        {question.options.map((option, optIndex) => (
+                          <div
+                            key={optIndex}
+                            className={`p-2 rounded text-sm ${
+                              option.startsWith(question.answer?.charAt(0)) 
+                                ? 'bg-green-400/10 border border-green-400/50' 
+                                : 'bg-muted/30'
+                            }`}
+                          >
+                            {option}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {question.answer && (
+                      <div className="text-sm">
+                        <span className="font-medium text-primary">Answer: </span>
+                        <span className="text-muted-foreground">{question.answer}</span>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </ScrollArea>
+          
+          <DialogFooter className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setShowPreview(false)}
+              className="flex items-center gap-2"
+            >
+              <X className="w-4 h-4" />
+              Cancel
+            </Button>
+            <Button
+              onClick={handleFinalExport}
+              className="bg-gradient-primary hover:shadow-glow flex items-center gap-2"
+            >
+              <Download className="w-4 h-4" />
+              Export {exportType.toUpperCase()}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
+export default Dashboard;
