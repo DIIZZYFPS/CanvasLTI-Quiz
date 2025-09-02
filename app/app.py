@@ -1,11 +1,11 @@
-from flask import *
+from flask import Flask, send_from_directory, render_template, Response, request
 import io
 import zipfile
 import xml.etree.ElementTree as ET
 import xml.dom.minidom
 import re
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder="assets", template_folder="templates")
 
 
 # Helpers
@@ -306,6 +306,27 @@ def download():
     return Response(zip_buffer.read(), mimetype="application/zip", headers={
         "Content-Disposition": "attachment; filename=quiz_package.zip"
     })
+
+@app.route('/assets/<path:filename>')
+def assets(filename):
+    return send_from_directory(app.static_folder, filename)
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+
+# Production
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_react_app(path):
+    """
+    Serves the React application. In production, any request that doesn't match
+    an LTI or API route will be served the index.html file, allowing
+    React Router to handle the frontend routing.
+    """
+    return render_template('index.html')
+
 
 # --- Example Usage ---
 if __name__ == '__main__':
