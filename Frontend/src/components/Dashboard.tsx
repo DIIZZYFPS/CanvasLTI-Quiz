@@ -51,7 +51,11 @@ const Dashboard = () => {
     
     if (currentQuestion) questions.push(currentQuestion);
     return questions.length ? questions : [
-      { id: 1, type: 'multiple-choice', question: 'Sample question parsed from your content', options: ['A) Option 1', 'B) Option 2'], answer: 'A' }
+      { id: 1, type: 'multiple-choice', question: 'Sample question parsed from your content', options: ['A) Option 1', 'B) Option 2'], answer: 'A' },
+      { id: 2, type: 'short-answer', question: 'Sample short answer question', options: [], answer: 'Sample answer' },
+      { id: 3, type: 'true-false', question: 'Sample true/false question', options: ['True', 'False'], answer: 'True' },
+      { id: 4, type: 'fill-blank', question: 'Sample fill-in-the-blank question', options: [], answer: 'Sample answer' },
+      { id: 5, type: 'essay', question: 'Sample essay question', options: [], answer: 'Sample essay answer' }
     ];
   };
 
