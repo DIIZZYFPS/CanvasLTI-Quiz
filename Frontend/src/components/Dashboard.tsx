@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useState } from "react";
 import { Upload, FileText, Download, CheckCircle, Clock, AlertCircle, Eye, X } from "lucide-react";
+import api from "@/api";
 
 const Dashboard = () => {
   const [conversionStatus, setConversionStatus] = useState<'idle' | 'processing' | 'complete' | 'error'>('idle');
@@ -18,51 +19,16 @@ const Dashboard = () => {
   const [exportType, setExportType] = useState<'qti' | 'canvas'>('qti');
 
   // Mock function to parse questions from text
-  const parseQuestions = (content: string) => {
-    const questions = [];
-    const lines = content.split('\n').filter(line => line.trim());
-    let currentQuestion = null;
-    
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      
-      if (line.includes('?') || line.startsWith('Essay:') || line.startsWith('SA:')) {
-        if (currentQuestion) questions.push(currentQuestion);
-        
-        let type = 'multiple-choice';
-        if (line.includes('(T/F)') || line.includes('True/False')) type = 'true-false';
-        else if (line.startsWith('Essay:') || line.includes('[Essay]')) type = 'essay';
-        else if (line.startsWith('SA:') || line.includes('[Short Answer]')) type = 'short-answer';
-        else if (line.includes('_____')) type = 'fill-blank';
-        
-        currentQuestion = {
-          id: questions.length + 1,
-          type,
-          question: line.replace('Essay:', '').replace('SA:', '').trim(),
-          options: [],
-          answer: null
-        };
-      } else if (line.match(/^[A-D]\)/)) {
-        currentQuestion?.options.push(line);
-      } else if (line.startsWith('Answer:')) {
-        if (currentQuestion) currentQuestion.answer = line.replace('Answer:', '').trim();
-      }
-    }
-    
-    if (currentQuestion) questions.push(currentQuestion);
-    return questions.length ? questions : [
-      { id: 1, type: 'multiple-choice', question: 'Sample question parsed from your content', options: ['A) Option 1', 'B) Option 2'], answer: 'A' },
-      { id: 2, type: 'short-answer', question: 'Sample short answer question', options: [], answer: 'Sample answer' },
-      { id: 3, type: 'true-false', question: 'Sample true/false question', options: ['True', 'False'], answer: 'True' },
-      { id: 4, type: 'fill-blank', question: 'Sample fill-in-the-blank question', options: [], answer: 'Sample answer' },
-      { id: 5, type: 'essay', question: 'Sample essay question', options: [], answer: 'Sample essay answer' }
-    ];
+  const parseQuestions = async (content: string) => {
+    const response = await api.post('/preview', { quiz_text: content });
+    return response.data.questions;
   };
 
   const handleConvert = async (type: 'qti' | 'canvas') => {
     setExportType(type);
     setConversionStatus('processing');
     setProgress(0);
+    console.log(quizContent)
 
     // Simulate conversion progress
     const interval = setInterval(() => {
@@ -71,9 +37,11 @@ const Dashboard = () => {
           clearInterval(interval);
           setConversionStatus('complete');
           // Parse questions and show preview
-          const parsed = parseQuestions(quizContent);
-          setPreviewData(parsed);
-          setShowPreview(true);
+          (async () => {
+            const parsed = await parseQuestions(quizContent);
+            setPreviewData(parsed);
+            setShowPreview(true);
+          })();
           return 100;
         }
         return prev + 10;
@@ -83,8 +51,21 @@ const Dashboard = () => {
 
   const handleFinalExport = () => {
     setShowPreview(false);
-    // Here you would actually download/export the file
     console.log(`Exporting ${previewData.length} questions as ${exportType}`);
+    if (exportType === 'qti') {
+      (async () => {
+        const response = await api.post('/download', { quiz_text: quizContent }, { responseType: 'blob' });
+        const blob = new Blob([response.data], { type: 'application/zip' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'quiz_package.zip';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      })();
+    }
+
   };
 
   const getStatusIcon = () => {
@@ -323,37 +304,39 @@ Answer: Paris</pre>
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
                       <Badge variant="secondary" className="text-xs">
-                        Question {index + 1} - {question.type.replace('-', ' ').toUpperCase()}
+                        {index + 1} - {question.type?.replace(/_/g, ' ').toUpperCase()}
                       </Badge>
                       <Badge variant="outline" className="text-xs">
-                        {question.type}
+                        {question.points} {question.points > 1 ? "points" : "point"}
                       </Badge>
                     </div>
                   </CardHeader>
                   <CardContent className="pt-0 space-y-3">
-                    <p className="font-medium">{question.question}</p>
-                    
-                    {question.options.length > 0 && (
+                    <p className="font-medium">{question.question_text || question.question}</p>
+
+                    {/* Render answers if present */}
+                    {Array.isArray(question.answers) && question.answers.length > 1 && (
                       <div className="space-y-1">
-                        {question.options.map((option, optIndex) => (
+                        {question.answers.map((ans: any, optIndex: number) => (
                           <div
                             key={optIndex}
                             className={`p-2 rounded text-sm ${
-                              option.startsWith(question.answer?.charAt(0)) 
-                                ? 'bg-green-400/10 border border-green-400/50' 
+                              ans.id === question.correct_answer_id
+                                ? 'bg-green-400/10 border border-green-400/50'
                                 : 'bg-muted/30'
                             }`}
                           >
-                            {option}
+                            {ans.text}
                           </div>
                         ))}
                       </div>
                     )}
-                    
-                    {question.answer && (
+
+                    {/* Fallback for single answer */}
+                    {question.answers && (
                       <div className="text-sm">
                         <span className="font-medium text-primary">Answer: </span>
-                        <span className="text-muted-foreground">{question.answer}</span>
+                        <span className="text-muted-foreground">{question.answers[0]?.text}</span>
                       </div>
                     )}
                   </CardContent>
