@@ -5,9 +5,7 @@
     "client_id": "10000000000001",
    
     "auth_login_url": "http://localhost:3000/api/lti/authorize_redirect",
-
-    "auth_token_url": "http://localhost:3000/login/oauth2/token",  
-    
+    "auth_token_url": "http://localhost:3000/login/oauth2/token",
     "key_set_url": "http://localhost:3000/api/lti/security/jwks",
 
     "key_set": null,

@@ -1,6 +1,6 @@
 from linecache import cache
 from pprint import pprint
-from flask import Flask, send_from_directory, render_template, Response, request
+from flask import Flask, jsonify, send_from_directory, render_template, Response, request
 from flask_caching import Cache
 import io
 import zipfile
@@ -26,7 +26,7 @@ config = {
     "SESSION_FILE_DIR": mkdtemp(),
     "SESSION_COOKIE_NAME": "pylti1p3-flask-app-sessionid",
     "SESSION_COOKIE_HTTPONLY": True,
-    "SESSION_COOKIE_SECURE": True,   # should be True in case of HTTPS usage (production)
+    "SESSION_COOKIE_SECURE": False,   # should be True in case of HTTPS usage (production)
     "SESSION_COOKIE_SAMESITE": None,  # should be 'None' in case of HTTPS usage (production)
     "DEBUG_TB_INTERCEPT_REDIRECTS": False
 }
@@ -75,7 +75,7 @@ def login():
     flask_request = FlaskRequest()
     target_link_uri = flask_request.get_param('target_link_uri')
     if not target_link_uri:
-        raise Exception("Missing target_link_uri parameter")
+        target_link_uri = flask_request.get_param('redirect_uri')
 
     oidc_login = FlaskOIDCLogin(flask_request, tool_conf, launch_data_storage=launch_data_storage)
     return oidc_login\
@@ -91,9 +91,13 @@ def launch():
 
     message_launch = FlaskMessageLaunch(request=flask_request, tool_config=tool_conf, launch_data_storage=launch_data_storage)
     message_launch_data = message_launch.get_launch_data()
-    pprint.pprint(message_launch_data)
 
     return render_template('index.html')
+
+@app.route('/jwks/', methods=['GET'])
+def get_jwks():
+    tool_conf = ToolConfJsonFile(get_lti_config_path())
+    return jsonify(tool_conf.get_jwks())
 
 # Helpers
 
