@@ -1,12 +1,99 @@
+from linecache import cache
+from pprint import pprint
 from flask import Flask, send_from_directory, render_template, Response, request
+from flask_caching import Cache
 import io
 import zipfile
 import xml.etree.ElementTree as ET
 import xml.dom.minidom
 import re
+import os
+from tempfile import mkdtemp
+
+from pylti1p3.contrib.flask import FlaskOIDCLogin, FlaskMessageLaunch, FlaskRequest, FlaskCacheDataStorage
+from pylti1p3.registration import Registration
+from pylti1p3.tool_config import ToolConfJsonFile
 
 app = Flask(__name__, static_folder="assets", template_folder="templates")
 
+config = {
+    "DEBUG": True,
+    "ENV": "development",
+    "CACHE_TYPE": "simple",
+    "CACHE_DEFAULT_TIMEOUT": 600,
+    "SECRET_KEY": "replace-me",
+    "SESSION_TYPE": "filesystem",
+    "SESSION_FILE_DIR": mkdtemp(),
+    "SESSION_COOKIE_NAME": "pylti1p3-flask-app-sessionid",
+    "SESSION_COOKIE_HTTPONLY": True,
+    "SESSION_COOKIE_SECURE": False,   # should be True in case of HTTPS usage (production)
+    "SESSION_COOKIE_SAMESITE": None,  # should be 'None' in case of HTTPS usage (production)
+    "DEBUG_TB_INTERCEPT_REDIRECTS": False
+}
+app.config.from_mapping(config)
+cache = Cache(app)
+
+
+
+# LTI
+
+class ExtendedFlaskMessageLaunch(FlaskMessageLaunch):
+
+    def validate_nonce(self):
+        """
+        Probably it is bug on "https://lti-ri.imsglobal.org":
+        site passes invalid "nonce" value during deep links launch.
+        Because of this in case of iss == http://imsglobal.org just skip nonce validation.
+
+        """
+        iss = self.get_iss()
+        deep_link_launch = self.is_deep_link_launch()
+        if iss == "http://imsglobal.org" and deep_link_launch:
+            return self
+        return super().validate_nonce()
+
+def get_lti_config_path():
+    return os.path.join(app.root_path, 'config', 'config.json')
+
+def get_launch_data_storage():
+    return FlaskCacheDataStorage(cache)
+
+def get_jwk_from_public_key(key_name):
+    key_path = os.path.join(app.root_path, 'config', key_name)
+    with open(key_path, 'rb') as key_file:
+        public_key = key_file.read()
+        jwk = Registration.get_jwk(public_key)
+        return jwk
+
+
+
+@app.route('/login/', methods=['POST', 'GET'])
+def login():
+    tool_conf = ToolConfJsonFile(get_lti_config_path())
+    launch_data_storage = get_launch_data_storage()
+
+    flask_request = FlaskRequest()
+    target_link_uri = flask_request.get_param('target_link_uri')
+    if not target_link_uri:
+        raise Exception("Missing target_link_uri parameter")
+
+    oidc_login = FlaskOIDCLogin(flask_request, tool_conf, launch_data_storage=launch_data_storage)
+    return oidc_login\
+        .enable_check_cookies()\
+        .redirect(target_link_uri)
+
+
+@app.route('/launch/', methods=['POST'])
+def launch():
+    tool_conf = ToolConfJsonFile(get_lti_config_path())
+    flask_request = FlaskRequest()
+    launch_data_storage = get_launch_data_storage()
+
+    message_launch = FlaskMessageLaunch(request=flask_request, tool_config=tool_conf, launch_data_storage=launch_data_storage)
+    message_launch_data = message_launch.get_launch_data()
+    pprint.pprint(message_launch_data)
+
+    return render_template('index.html')
 
 # Helpers
 
@@ -306,6 +393,29 @@ def download():
     return Response(zip_buffer.read(), mimetype="application/zip", headers={
         "Content-Disposition": "attachment; filename=quiz_package.zip"
     })
+
+@app.route('/api/canvas', methods=['POST'])
+def canvas():
+    data = request.json
+    parsed_questions = parse_quiz_text(data.get("quiz_text", ""))
+    qti_package = create_qti_1_2_package(parsed_questions)
+    course_id = data.get("course_id")
+    access_token = data.get("access_token")
+
+    # Create a zip file in memory
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        zip_file.writestr("quiz.qti.xml", qti_package.encode("utf-8"))
+
+    zip_buffer.seek(0)
+    return Response(zip_buffer.read(), mimetype="application/zip", headers={
+        "Content-Disposition": "attachment; filename=quiz_package.zip"
+    })
+
+
+
+
+
 
 @app.route('/assets/<path:filename>')
 def assets(filename):

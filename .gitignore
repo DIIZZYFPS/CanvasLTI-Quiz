@@ -6,6 +6,8 @@ __pycache__/
 # C extensions
 *.so
 
+app/config/private.key
+
 node_modules/
 package-lock.json
 # Distribution / packaging
