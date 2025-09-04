@@ -336,7 +336,13 @@ Answer: Paris</pre>
                     {question.answers && (
                       <div className="text-sm">
                         <span className="font-medium text-primary">Answer: </span>
-                        <span className="text-muted-foreground">{question.answers[0]?.text}</span>
+                        <span className="text-muted-foreground">
+                          {question.correct_answer_id ? (
+                            Array.isArray(question.answers)
+                              ? question.answers.find((ans: any) => ans.id === question.correct_answer_id)?.text
+                              : question.answers?.text
+                          ) : question.answers[0]?.text}
+                        </span>
                       </div>
                     )}
                   </CardContent>

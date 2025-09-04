@@ -226,36 +226,32 @@ def _parse_fill_in_the_blank(line, index):
 
 def parse_quiz_text(text_input):
     """
-    Parses a multi-line string of quiz questions into a structured list of dictionaries.
+    Parses multi-line quiz questions (blocks separated by blank lines).
     """
     questions = []
-    lines = text_input.strip().split('\n')
-    print(lines)
+    blocks = [block.strip() for block in text_input.strip().split('\n\n') if block.strip()]
     
-    for i, line in enumerate(lines):
-        line = line.strip()
-        if not line:
-            continue
-        print("(T/F)" in line, line)
+    for i, block in enumerate(blocks):
+        lines = [line.strip() for line in block.split('\n') if line.strip()]
+        block_text = " ".join(lines)  # Combine lines for regex matching
 
         question_data = None
-        
+
         # The order of these checks matters. We check for the most unique patterns first.
-        if "Answer:" in line and ("(T/F)" in line or "(True/False)" in line):
-            question_data = _parse_true_false(line, i)
-        elif "Answer:" in line and re.search(r'[A-Z]\)', line):
-            question_data = _parse_multiple_choice(line, i)
-        elif re.search(r'_{2,}', line):
-            question_data = _parse_fill_in_the_blank(line, i)
-        elif "Answer:" in line and (line.startswith("SA:") or "[Short Answer]" in line):
-            question_data = _parse_short_answer(line, i)
-        elif line.startswith("Essay:") or "[Essay]" in line:
-            question_data = _parse_essay(line, i)
-        
-        # FIX: This must be inside the loop!
+        if "Answer:" in block_text and ("(T/F)" in block_text or "(True/False)" in block_text):
+            question_data = _parse_true_false(block_text, i)
+        elif "Answer:" in block_text and re.search(r'[A-Z]\)', block_text):
+            question_data = _parse_multiple_choice(block_text, i)
+        elif re.search(r'_{2,}', block_text):
+            question_data = _parse_fill_in_the_blank(block_text, i)
+        elif "Answer:" in block_text and (block_text.startswith("SA:") or "[Short Answer]" in block_text):
+            question_data = _parse_short_answer(block_text, i)
+        elif block_text.startswith("Essay:") or "[Essay]" in block_text:
+            question_data = _parse_essay(block_text, i)
+
         if question_data:
             questions.append(question_data)
-            
+
     return questions
 
 def _create_mcq_item(section, question):
