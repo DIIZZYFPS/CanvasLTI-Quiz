@@ -10,6 +10,7 @@ import { useState } from "react";
 import { Upload, FileText, Download, CheckCircle, Clock, AlertCircle, Eye, X } from "lucide-react";
 import api from "@/api";
 import { FileUpload } from "./FileUpload";
+import { toast } from "sonner";
 
 const Dashboard = () => {
   const [conversionStatus, setConversionStatus] = useState<'idle' | 'processing' | 'complete' | 'error'>('idle');
@@ -49,6 +50,11 @@ const Dashboard = () => {
     setProgress(0);
     console.log(quizContent)
 
+    if (quizContent && selectedFile) {
+      toast.error("Please provide either quiz content or a file, not both.");
+      setConversionStatus('error');
+      return;
+    }
     // Simulate conversion progress
     const interval = setInterval(() => {
       setProgress(prev => {
@@ -57,7 +63,7 @@ const Dashboard = () => {
           setConversionStatus('complete');
           // Parse questions and show preview
           (async () => {
-            const parsed = await parseQuestions(quizContent? quizContent : null, selectedFile? selectedFile : null);
+            const parsed = await parseQuestions(quizContent ? quizContent : null, selectedFile ? selectedFile : null);
             setPreviewData(parsed);
             setShowPreview(true);
           })();
