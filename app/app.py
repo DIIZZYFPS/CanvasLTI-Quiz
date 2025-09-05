@@ -101,90 +101,83 @@ def get_jwks():
 
 # Helpers
 
-def _parse_multiple_choice(line, index):
-    """Parses a multiple-choice question line."""
-    # Regex to capture the question, the options, and the final answer
-    pattern = re.compile(r'^(.*?)\s*([A-Z]\).*?)\s*Answer:\s*([A-Z])$', re.IGNORECASE)
-    match = pattern.match(line)
+def _parse_multiple_choice(lines, index):
+    """Parses a multiple-choice question line, now with points."""
+    full_text = " ".join(lines)
+    # Updated pattern to capture optional points
+    pattern = re.compile(r'^(.*?)(?:\s*\((\d+)\s*points?\))?\s*((?:[A-Z]\).*?)+)\s*Answer:\s*([A-Z])$', re.IGNORECASE | re.DOTALL)
+    match = pattern.match(full_text)
     
-    if not match:
-        return None
+    if not match: return None
 
-    question_text = match.group(1).strip()
-    options_text = match.group(2).strip()
-    correct_answer_letter = match.group(3).upper()
-
-    # Split the options block into individual options
-    options = re.split(r'\s*(?=[A-Z]\))', options_text)
+    question_text, points, _, correct_answer_letter = [s.strip() if s else None for s in match.groups()]
+    points = points if points else "1"
+    correct_answer_letter = correct_answer_letter.upper()
     
-    answers = []
-    correct_answer_id = None
-    for i, option in enumerate(filter(None, options)):
-        letter = option[0].upper()
-        text = option[2:].strip()
+    answers, correct_answer_id = [], None
+    option_lines = [line for line in lines if re.match(r'^[A-Z]\)', line.strip())]
+    for i, option_line in enumerate(option_lines):
+        letter = option_line.strip()[0].upper()
+        text = option_line.strip()[2:].strip()
         answer_id = f"q{index}_ans{i}"
-        
         answers.append({"id": answer_id, "text": text})
-        
         if letter == correct_answer_letter:
             correct_answer_id = answer_id
             
-    return {
-        "id": f"q{index}",
-        "type": "multiple_choice_question",
-        "question_text": question_text,
-        "answers": answers,
-        "correct_answer_id": correct_answer_id,
-        "points": "1" # Default points
-    }
+    return {"id": f"q{index}", "type": "multiple_choice_question", "question_text": question_text,
+            "answers": answers, "correct_answer_id": correct_answer_id, "points": points}
 
-def _parse_true_false(line, index):
-    """Parses a true/false question line."""
-    pattern = re.compile(r'^(.*?)\s*\((T\/F|True\/False)\)\s*Answer:\s*(True|False)\s*$', re.IGNORECASE)
-    match = pattern.match(line)
+def _parse_true_false(lines, index):
+    """Parses a true/false question line, now with points."""
+    full_text = " ".join(lines)
+    # Updated pattern to capture optional points
+    pattern = re.compile(r'^(.*?)(?:\s*\((\d+)\s*points?\))?\s*\((?:T\/F|True\/False)\)\s*Answer:\s*(True|False)$', re.IGNORECASE)
+    match = pattern.match(full_text)
 
-    print(line)
+    if not match: print("True/False question format is invalid."); return None
+
+    question_text, points, correct_answer_text = [s.strip() if s else None for s in match.groups()]
+    points = points if points else "1"
+    correct_answer_text = correct_answer_text.capitalize()
     
-    if not match:
-        return None
-        
-    question_text = match.group(1).strip()
-    correct_answer_text = match.group(3).capitalize()
-    
-    answers = [
-        {"id": f"q{index}_ans0", "text": "True"},
-        {"id": f"q{index}_ans1", "text": "False"}
-    ]
-    
+    answers = [{"id": f"q{index}_ans0", "text": "True"}, {"id": f"q{index}_ans1", "text": "False"}]
     correct_answer_id = answers[0]['id'] if correct_answer_text == "True" else answers[1]['id']
 
-    return {
-        "id": f"q{index}",
-        "type": "true_false_question",
-        "question_text": question_text,
-        "answers": answers,
-        "correct_answer_id": correct_answer_id,
-        "points": "1"
-    }
+    return {"id": f"q{index}", "type": "true_false_question", "question_text": question_text,
+            "answers": answers, "correct_answer_id": correct_answer_id, "points": points}
 
 def _parse_short_answer(line, index):
-    """Parses a short answer question line."""
-    pattern = re.compile(r'^(?:SA:\s*)?(.*?)(?:\[Short Answer\])?\s*Answer:\s*(.*)$', re.IGNORECASE)
+    """Parses a short answer question line, now with points."""
+    # Updated pattern to capture optional points
+    pattern = re.compile(r'^(?:SA:\s*)?(.*?)(?:\[Short Answer\])?(?:\s*\((\d+)\s*points?\))?\s*Answer:\s*(.*)$', re.IGNORECASE)
     match = pattern.match(line.strip())
     
-    if not match:
-        return None
+    if not match: return None
         
-    question_text = match.group(1).strip()
-    correct_answer = match.group(2).strip()
+    question_text, points, correct_answer = [s.strip() if s else None for s in match.groups()]
+    points = points if points else "1"
     
-    return {
-        "id": f"q{index}",
-        "type": "short_answer_question",
-        "question_text": question_text,
-        "answers": [{"id": f"q{index}_ans0", "text": correct_answer}], # Store the correct answer(s)
-        "points": "1"
-    }
+    return {"id": f"q{index}", "type": "short_answer_question", "question_text": question_text,
+            "answers": [{"id": f"q{index}_ans0", "text": correct_answer}], "points": points}
+
+def _parse_fill_in_the_blank(line, index):
+    """Parses a fill-in-the-blank question line, now with points."""
+    # Updated pattern to capture optional points
+    pattern = re.compile(r'^(.*?)\s*_{2,}\s*(.*?)(?:\s*\((\d+)\s*points?\))?\s*Answer:\s*(.*)$', re.IGNORECASE)
+    match = pattern.match(line)
+    
+    if not match: return None
+        
+    question_text_start = match.group(1).strip()
+    question_text_end = match.group(2).strip()
+    points = match.group(3) if match.group(3) else "1"
+    correct_answer = match.group(4).strip()
+    
+    question_text = f"{question_text_start} _____ {question_text_end}".strip()
+
+    return {"id": f"q{index}", "type": "fill_in_the_blank_question", "question_text": question_text,
+            "answers": [{"id": f"q{index}_ans0", "text": correct_answer}], "points": points}
+
 
 def _parse_essay(line, index):
     """Parses an essay question line."""
@@ -205,54 +198,51 @@ def _parse_essay(line, index):
         "points": points
     }
 
-def _parse_fill_in_the_blank(line, index):
-    """Parses a fill-in-the-blank question line."""
-    pattern = re.compile(r'^(.*?)\s*_{2,}\s*(.*?)\s*Answer:\s*(.*)$', re.IGNORECASE)
-    match = pattern.match(line)
-    
-    if not match:
-        return None
-        
-    question_text = f"{match.group(1).strip()} _____ {match.group(2).strip()}"
-    correct_answer = match.group(3).strip()
-
-    return {
-        "id": f"q{index}",
-        "type": "fill_in_the_blank_question",
-        "question_text": question_text,
-        "answers": [{"id": f"q{index}_ans0", "text": correct_answer}],
-        "points": "1"
-    }
-
 def parse_quiz_text(text_input):
     """
-    Parses multi-line quiz questions (blocks separated by blank lines).
+    Correctly parses multi-line quiz questions from a single text block.
     """
     questions = []
-    blocks = [block.strip() for block in text_input.strip().split('\n\n') if block.strip()]
+    # Split by one or more blank lines to correctly separate each question block
+    blocks = re.split(r'\n\s*\n', text_input.strip())
     
     for i, block in enumerate(blocks):
+        if not block.strip():
+            continue
+        print(f"Parsing block {i}: {block}")
         lines = [line.strip() for line in block.split('\n') if line.strip()]
-        block_text = " ".join(lines)  # Combine lines for regex matching
+        full_block_text = " ".join(lines) # Used for simple keyword checks
 
         question_data = None
 
-        # The order of these checks matters. We check for the most unique patterns first.
-        if "Answer:" in block_text and ("(T/F)" in block_text or "(True/False)" in block_text):
-            question_data = _parse_true_false(block_text, i)
-        elif "Answer:" in block_text and re.search(r'[A-Z]\)', block_text):
-            question_data = _parse_multiple_choice(block_text, i)
-        elif re.search(r'_{2,}', block_text):
-            question_data = _parse_fill_in_the_blank(block_text, i)
-        elif "Answer:" in block_text and (block_text.startswith("SA:") or "[Short Answer]" in block_text):
-            question_data = _parse_short_answer(block_text, i)
-        elif block_text.startswith("Essay:") or "[Essay]" in block_text:
-            question_data = _parse_essay(block_text, i)
-
+        #Removes leading numbering like "1. " or "2) "
+        if re.match(r'^\d+[\.\)]\s+', lines[0]):
+            lines[0] = re.sub(r'^\d+[\.\)]\s+', '', lines[0])
+            full_block_text = " ".join(lines)
+        
+        # Router logic to determine the question type
+        if "Answer:" in full_block_text and re.search(r'\((T/F|True/False)\)', full_block_text, re.IGNORECASE):
+            print(f"Detected True/False question in block {i}")
+            question_data = _parse_true_false(lines, i)
+        elif "Answer:" in full_block_text and (full_block_text.lower().startswith("sa:") or "[short answer]" in full_block_text.lower()):
+            print(f"Detected Short Answer question in block {i}")
+            question_data = _parse_short_answer(full_block_text, i)
+        elif re.search(r'_{2,}', full_block_text) and "Answer:" in full_block_text:
+            print(f"Detected Fill-in-the-Blank question in block {i}")
+            question_data = _parse_fill_in_the_blank(full_block_text, i)
+        elif "Answer:" in full_block_text and re.search(r'[A-Z]\)', full_block_text, re.IGNORECASE):
+            print(f"Detected Multiple Choice question in block {i}")
+            question_data = _parse_multiple_choice(lines, i)
+        elif full_block_text.lower().startswith("essay:") or "[essay]" in full_block_text.lower():
+            print(f"Detected Essay question in block {i}")
+            question_data = _parse_essay(full_block_text, i)
+        else:
+            print(f"Warning: Could not determine question type for block {i} - skipping.")
+        
         if question_data:
             questions.append(question_data)
-
-    return questions
+            
+    return {"questions": questions}
 
 def _create_mcq_item(section, question):
     """Builds the XML for a Multiple Choice or True/False question."""
@@ -372,10 +362,38 @@ def create_qti_1_2_package(parsed_data, quiz_title="My Uploaded Quiz"):
     reparsed = xml.dom.minidom.parseString(rough_string)
     return reparsed.toprettyxml(indent="  ")
 
+def read_file(file):
+    if file.content_type == "application/pdf":
+        import fitz
+        file_bytes = file.read()
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+        text = ""
+        for page in doc:
+            text += page.get_text()
+        return text
+    elif file.content_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        from docx import Document
+        file_bytes = file.read()
+        with io.BytesIO(file_bytes) as file_stream:
+            document = Document(file_stream)
+            text = "\n".join([para.text for para in document.paragraphs])
+        return text
+    else:
+        return file.read().decode('utf-8')
+
 @app.route("/api/preview", methods=['POST'])
 def preview():
-    data = request.json
-    parsed_questions = parse_quiz_text(data.get("quiz_text", ""))
+    if request.content_type.startswith("multipart/form-data"):
+        file = request.files.get("file")
+        if file:
+            content = read_file(file)
+            print(content)
+            parsed_questions = parse_quiz_text(content)
+        else:
+            return {"error": "No file provided"}, 400
+    else:
+        data = request.get_json()
+        parsed_questions = parse_quiz_text(data.get("quiz_text", ""))
     return {"questions": parsed_questions}
 
 @app.route("/api/download", methods=['POST'])

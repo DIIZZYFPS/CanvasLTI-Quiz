@@ -9,6 +9,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useState } from "react";
 import { Upload, FileText, Download, CheckCircle, Clock, AlertCircle, Eye, X } from "lucide-react";
 import api from "@/api";
+import { FileUpload } from "./FileUpload";
+import { toast } from "sonner";
 
 const Dashboard = () => {
   const [conversionStatus, setConversionStatus] = useState<'idle' | 'processing' | 'complete' | 'error'>('idle');
@@ -17,11 +19,29 @@ const Dashboard = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [previewData, setPreviewData] = useState<any[]>([]);
   const [exportType, setExportType] = useState<'qti' | 'canvas'>('qti');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  // Mock function to parse questions from text
-  const parseQuestions = async (content: string) => {
-    const response = await api.post('/preview', { quiz_text: content });
-    return response.data.questions;
+
+  const handleFileUpload = (file: File) => {
+    setSelectedFile(file);
+  };
+
+  const parseQuestions = async (content: string | null, file: File | null) => {
+    if (!content && !file) return [];
+    let response;
+
+    if (file) {
+      const formData = new FormData();
+      formData.append('file', file);
+      response = await api.post('/preview', formData);
+    } else if (content) {
+      response = await api.post('/preview', { quiz_text: content }, {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Fix: unwrap nested questions
+    return response?.data?.questions?.questions ?? [];
   };
 
   const handleConvert = async (type: 'qti' | 'canvas') => {
@@ -30,6 +50,11 @@ const Dashboard = () => {
     setProgress(0);
     console.log(quizContent)
 
+    if (quizContent && selectedFile) {
+      toast.error("Please provide either quiz content or a file, not both.");
+      setConversionStatus('error');
+      return;
+    }
     // Simulate conversion progress
     const interval = setInterval(() => {
       setProgress(prev => {
@@ -38,7 +63,7 @@ const Dashboard = () => {
           setConversionStatus('complete');
           // Parse questions and show preview
           (async () => {
-            const parsed = await parseQuestions(quizContent);
+            const parsed = await parseQuestions(quizContent ? quizContent : null, selectedFile ? selectedFile : null);
             setPreviewData(parsed);
             setShowPreview(true);
           })();
@@ -123,15 +148,8 @@ const Dashboard = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex justify-center">
-                  <Button variant="outline" className="h-24 w-full max-w-xs border-dashed border-2 hover:bg-muted/50">
-                    <div className="text-center">
-                      <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
-                      <p className="text-sm font-medium">Upload File</p>
-                      <p className="text-xs text-muted-foreground">CSV, TXT, JSON</p>
-                    </div>
-                  </Button>
-                </div>
+                {/* File Upload Component */}
+                <FileUpload onSubmit={handleFileUpload} />
                 
                 <Separator />
                 
@@ -160,18 +178,18 @@ const Dashboard = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Button 
                     onClick={() => handleConvert('qti')}
-                    disabled={!quizContent.trim() || conversionStatus === 'processing'}
+                    disabled={(!quizContent.trim() && !selectedFile) || conversionStatus === 'processing'}
                     className="bg-gradient-primary hover:shadow-glow transition-all duration-300"
                   >
                     Export to QTI ZIP
                   </Button>
                   <Button 
                     onClick={() => handleConvert('canvas')}
-                    disabled={!quizContent.trim() || conversionStatus === 'processing'}
+                    disabled={/*(!quizContent.trim() && !selectedFile) || conversionStatus === 'processing'*/ true} // Disable Canvas export for now
                     variant="outline"
                     className="border-primary text-primary hover:bg-primary hover:text-primary-foreground"
                   >
-                    Export to Canvas
+                    Export to Canvas Quiz (Coming Soon)
                   </Button>
                 </div>
               </CardContent>
