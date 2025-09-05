@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils"
-import {useState, type SetStateAction} from "react"
+import {useState} from "react"
 import { File, Upload, X } from "lucide-react"
 import { Button } from "./ui/button";
 
