@@ -1,3 +1,10 @@
+# Backend Libraries
 flask
-pylti1p3
 flask_caching
+
+# LTI Libraries
+pylti1p3
+
+# Doc Parsing Libraries
+PyMuPDF
+python-docx
