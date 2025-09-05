@@ -40,8 +40,7 @@ const Dashboard = () => {
       });
     }
 
-    // Fix: unwrap nested questions
-    return response?.data?.questions?.questions ?? [];
+    return response?.data?.questions ?? [];
   };
 
   const handleConvert = async (type: 'qti' | 'canvas') => {
@@ -79,8 +78,16 @@ const Dashboard = () => {
     console.log(`Exporting ${previewData.length} questions as ${exportType}`);
     if (exportType === 'qti') {
       (async () => {
-        const response = await api.post('/download', { quiz_text: quizContent }, { responseType: 'blob' });
-        const blob = new Blob([response.data], { type: 'application/zip' });
+        let response;
+        if (selectedFile) {
+          const formData = new FormData();
+          formData.append('file', selectedFile);
+          response = await api.post('/download', formData, { responseType: 'blob' });
+        }
+        else if (quizContent) {
+          response = await api.post('/download', { quiz_text: quizContent }, { responseType: 'blob' });
+        }
+        const blob = new Blob([response?.data], { type: 'application/zip' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;

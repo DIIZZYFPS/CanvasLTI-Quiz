@@ -242,7 +242,7 @@ def parse_quiz_text(text_input):
         if question_data:
             questions.append(question_data)
             
-    return {"questions": questions}
+    return questions
 
 def _create_mcq_item(section, question):
     """Builds the XML for a Multiple Choice or True/False question."""
@@ -398,8 +398,17 @@ def preview():
 
 @app.route("/api/download", methods=['POST'])
 def download():
-    data = request.json
-    parsed_questions = parse_quiz_text(data.get("quiz_text", ""))
+    if request.content_type.startswith("multipart/form-data"):
+        file = request.files.get("file")
+        if file:
+            content = read_file(file)
+            print(content)
+            parsed_questions = parse_quiz_text(content)
+        else:
+            return {"error": "No file provided"}, 400
+    else:
+        data = request.get_json()
+        parsed_questions = parse_quiz_text(data.get("quiz_text", ""))
     qti_package = create_qti_1_2_package(parsed_questions)
 
     # Create a zip file in memory
