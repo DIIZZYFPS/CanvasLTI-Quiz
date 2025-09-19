@@ -1,6 +1,7 @@
 # Backend Libraries
 flask
 flask_caching
+gunicorn
 
 # LTI Libraries
 pylti1p3

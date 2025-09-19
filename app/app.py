@@ -17,8 +17,8 @@ from pylti1p3.tool_config import ToolConfJsonFile
 app = Flask(__name__, static_folder="assets", template_folder="templates")
 
 config = {
-    "DEBUG": True,
-    "ENV": "development",
+    "DEBUG": False,
+    "ENV": "production",
     "CACHE_TYPE": "simple",
     "CACHE_DEFAULT_TIMEOUT": 600,
     "SECRET_KEY": "replace-me",
@@ -26,8 +26,8 @@ config = {
     "SESSION_FILE_DIR": mkdtemp(),
     "SESSION_COOKIE_NAME": "pylti1p3-flask-app-sessionid",
     "SESSION_COOKIE_HTTPONLY": True,
-    "SESSION_COOKIE_SECURE": False,   # should be True in case of HTTPS usage (production)
-    "SESSION_COOKIE_SAMESITE": None,  # should be 'None' in case of HTTPS usage (production)
+    "SESSION_COOKIE_SECURE": True,   # should be True in case of HTTPS usage (production)
+    "SESSION_COOKIE_SAMESITE": 'None',  # should be 'None' in case of HTTPS usage (production)
     "DEBUG_TB_INTERCEPT_REDIRECTS": False
 }
 app.config.from_mapping(config)
@@ -35,7 +35,7 @@ cache = Cache(app)
 
 
 
-# LTI
+# LTI ( In Development )
 
 class ExtendedFlaskMessageLaunch(FlaskMessageLaunch):
 
