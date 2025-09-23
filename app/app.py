@@ -14,6 +14,10 @@ from pylti1p3.contrib.flask import FlaskOIDCLogin, FlaskMessageLaunch, FlaskRequ
 from pylti1p3.registration import Registration
 from pylti1p3.tool_config import ToolConfJsonFile
 
+SESSION_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'flask_session')
+if not os.path.exists(SESSION_DIR):
+    os.makedirs(SESSION_DIR)
+
 app = Flask(__name__, static_folder="assets", template_folder="templates")
 
 config = {
@@ -23,7 +27,7 @@ config = {
     "CACHE_DEFAULT_TIMEOUT": 600,
     "SECRET_KEY": "replace-me",
     "SESSION_TYPE": "filesystem",
-    "SESSION_FILE_DIR": mkdtemp(),
+    "SESSION_FILE_DIR": SESSION_DIR,
     "SESSION_COOKIE_NAME": "pylti1p3-flask-app-sessionid",
     "SESSION_COOKIE_HTTPONLY": True,
     "SESSION_COOKIE_SECURE": True,   # should be True in case of HTTPS usage (production)
