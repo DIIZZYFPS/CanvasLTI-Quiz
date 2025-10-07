@@ -445,7 +445,7 @@ def canvas():
 @app.route('/api/instructions')
 def download_instructions():
     return send_file(
-        "public/Quiz Reformatting Intructions.txt",
+        "public/Intructions.txt",
         as_attachment=True,
         download_name="Quiz Reformatting Instructions.txt",
     )
