@@ -1,0 +1,75 @@
+Objective: Reformat a given set of quiz questions to be compatible with the Canvas QTI Converter tool.
+
+Input: A list of quiz questions in any format.
+
+Output: A plain text file where each question is formatted according to the rules below. Each question should be separated by a blank line.
+
+Formatting Rules by Question Type:
+1. Multiple Choice Questions
+
+Structure:
+
+The question text. You can optionally include point values in parentheses, e.g., (2 points).
+
+Each multiple-choice option on a new line, formatted with a letter and a parenthesis, e.g., A) ..., B) ....
+
+The correct answer on a new line, formatted as Answer: <Correct Letter>.
+
+Example:
+
+Which of these is a JavaScript framework? (2 points)
+A) Django
+B) Laravel
+C) React
+D) Flask
+Answer: C
+2. True/False Questions
+
+Structure:
+
+The question text, followed by (T/F) or (True/False).
+
+You can optionally include point values in parentheses, e.g., (1 point).
+
+The correct answer on a new line, formatted as Answer: True or Answer: False.
+
+Example:
+
+The chemical symbol for Gold is Au. (1 point) (T/F) Answer: True
+3. Short Answer Questions
+
+Structure:
+
+The question must begin with SA: or end with [Short Answer].
+
+You can optionally include point values in parentheses, e.g., (1 point).
+
+The correct answer must be on the same line, formatted as Answer: <Correct Answer>.
+
+Example:
+
+SA: What is the name of the galaxy that contains our Solar System? (1 point) Answer: Milky Way
+4. Fill in the Blank Questions
+
+Structure:
+
+The question text, with the blank space indicated by two or more underscores (__).
+
+You can optionally include point values in parentheses, e.g., (3 points).
+
+The correct answer on the same line, formatted as Answer: <Correct Answer>.
+
+Example:
+
+To infinity, and _____! (3 points) Answer: beyond
+5. Essay Questions
+
+Structure:
+
+The question must begin with Essay: or end with [Essay].
+
+You can optionally include point values in the format Points: <Number>, e.g., Points: 5.
+
+Example:
+
+Essay: Describe the difference between a list and a tuple in Python. Points: 5

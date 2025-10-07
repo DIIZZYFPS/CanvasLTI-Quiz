@@ -1,4 +1,4 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -251,6 +251,11 @@ const Dashboard = () => {
                 <CardDescription>
                   Format your questions according to these guidelines for automatic type detection
                 </CardDescription>
+                <CardFooter>
+                  <Button variant="outline" className="w-full">
+                    <a href="/Quiz Reformatting Instructions.txt" download>Download AI Formatting Guide</a>
+                  </Button>
+                </CardFooter>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4 text-sm">
