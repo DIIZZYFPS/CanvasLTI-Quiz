@@ -1,29 +1,12 @@
 {
-"https://canvas.instructure.com": [{
-    
 
-    "client_id": "10000000000001",
-   
-    "auth_login_url": "http://localhost:3000/api/lti/authorize_redirect",
-    "auth_token_url": "http://localhost:3000/login/oauth2/token",
-    "key_set_url": "http://localhost:3000/api/lti/security/jwks",
-
-    "key_set": null,
-
-    "private_key_file": "private.key",
-
-    "public_key_file": "public.key",
-
-    "deployment_ids": ["1:99a069795168a31c24083567e0c7e00bb57966d3", "2:4dde05e8ca1973bcca9bffc13e1548820eee93a3"]
-}],
-
-"https://calstatela.beta.instructure.com": [{
+"https://canvas.beta.instructure.com": [{
     "default": true,
     "client_id": "115900000000000280",
 
-    "auth_login_url": "http://calstatela.beta.instructure.com/api/lti/authorize_redirect",
-    "auth_token_url": "http://calstatela.beta.instructure.com/login/oauth2/token",
-    "key_set_url": "http://calstatela.beta.instructure.com/api/lti/security/jwks",
+    "auth_login_url": "https://canvas.beta.instructure.com/api/lti/authorize_redirect",
+    "auth_token_url": "https://canvas.beta.instructure.com/login/oauth2/token",
+    "key_set_url": "https://canvas.beta.instructure.com/api/lti/security/jwks",
 
     "key_set": null,
 
@@ -32,5 +15,20 @@
     "public_key_file": "public.key",
 
     "deployment_ids": ["15087:d5c06b5e5eaf59640d07356a48db053a7c1e6b81"]
+}],
+"https://canvas.instructure.com": [{
+    "client_id": "",
+
+    "auth_login_url": "https://canvas.instructure.com/api/lti/authorize_redirect",
+    "auth_token_url": "https://canvas.instructure.com/login/oauth2/token",
+    "key_set_url": "https://canvas.instructure.com/api/lti/security/jwks",
+
+    "key_set": null,
+
+    "private_key_file": "private.key",
+
+    "public_key_file": "public.key",
+
+    "deployment_ids": [""]
 }]
 }

@@ -253,7 +253,7 @@ const Dashboard = () => {
                 </CardDescription>
                 <CardFooter>
                   <Button variant="outline" className="w-full">
-                    <a href="/Quiz Reformatting Instructions.txt" download>Download AI Formatting Guide</a>
+                    <a href="/api/instructions" download>Download AI Formatting Guide</a>
                   </Button>
                 </CardFooter>
               </CardHeader>

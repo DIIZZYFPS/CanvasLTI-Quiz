@@ -1,6 +1,6 @@
 from linecache import cache
 from pprint import pprint
-from flask import Flask, jsonify, send_from_directory, render_template, Response, request
+from flask import Flask, jsonify, send_from_directory, render_template, Response, request, send_file
 from flask_caching import Cache
 import io
 import zipfile
@@ -94,7 +94,7 @@ def launch():
     launch_data_storage = get_launch_data_storage()
 
     message_launch = FlaskMessageLaunch(request=flask_request, tool_config=tool_conf, launch_data_storage=launch_data_storage)
-    message_launch_data = message_launch.get_launch_data()
+    # message_launch_data = message_launch.get_launch_data()
 
     return render_template('index.html')
 
@@ -442,7 +442,13 @@ def canvas():
     return Response(zip_buffer.read(), mimetype="application/zip", headers={
         "Content-Disposition": "attachment; filename=quiz_package.zip"
     })
-
+@app.route('/api/instructions')
+def download_instructions():
+    return send_file(
+        "public/Quiz Reformatting Intructions.txt",
+        as_attachment=True,
+        download_name="Quiz Reformatting Instructions.txt",
+    )
 
 
 
@@ -467,6 +473,7 @@ def serve_react_app(path):
     React Router to handle the frontend routing.
     """
     return render_template('index.html')
+
 
 
 # --- Example Usage ---
