@@ -7,10 +7,12 @@ import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useState } from "react";
-import { Upload, FileText, Download, CheckCircle, Clock, AlertCircle, Eye, X } from "lucide-react";
+import { Upload, FileText, Download, CheckCircle, Clock, AlertCircle, Eye, X, ChevronDown, ChevronUp, Sun, Moon } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible";
 import api from "@/api";
 import { FileUpload } from "./FileUpload";
 import { toast } from "sonner";
+import { useTheme } from "./ui/theme-provider";
 
 const Dashboard = () => {
   const [conversionStatus, setConversionStatus] = useState<'idle' | 'processing' | 'complete' | 'error'>('idle');
@@ -20,6 +22,8 @@ const Dashboard = () => {
   const [previewData, setPreviewData] = useState<any[]>([]);
   const [exportType, setExportType] = useState<'qti' | 'canvas'>('qti');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const { theme, setTheme } = useTheme();
 
 
   const handleFileUpload = (file: File) => {
@@ -126,7 +130,7 @@ const Dashboard = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-gradient-primary rounded-lg flex items-center justify-center">
-                <FileText className="w-6 h-6 text-primary-foreground" />
+                <FileText className="w-6 h-6 text-ring" />
               </div>
               <div>
                 <h1 className="text-xl font-bold">Quiz to QTI Converter</h1>
@@ -136,6 +140,8 @@ const Dashboard = () => {
             <Badge variant="secondary" className="font-medium">
               Canvas LTI Tool
             </Badge>
+            <Button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} variant="ghost">
+              {theme === 'dark' ? <Sun className='w-4 h-4' /> : <Moon className="w-4 h-4" /> }</Button>
           </div>
         </div>
       </header>
@@ -186,18 +192,21 @@ const Dashboard = () => {
                   <Button 
                     onClick={() => handleConvert('qti')}
                     disabled={(!quizContent.trim() && !selectedFile) || conversionStatus === 'processing'}
-                    className="bg-gradient-primary hover:shadow-glow transition-all duration-300"
+                    variant="outline"
+                    className="bg-gradient-primary hover:shadow-glow transition-all duration-300 col-span-1 md:col-span-2"
                   >
                     Export to QTI ZIP
                   </Button>
+                  {/*
                   <Button 
                     onClick={() => handleConvert('canvas')}
-                    disabled={/*(!quizContent.trim() && !selectedFile) || conversionStatus === 'processing'*/ true} // Disable Canvas export for now
+                    disabled={(!quizContent.trim() && !selectedFile) || conversionStatus === 'processing' true } // Disable Canvas export for now
                     variant="outline"
                     className="border-primary text-primary hover:bg-primary hover:text-primary-foreground"
                   >
                     Export to Canvas Quiz (Coming Soon)
                   </Button>
+                  */} 
                 </div>
               </CardContent>
             </Card>
@@ -205,6 +214,84 @@ const Dashboard = () => {
 
           {/* Status & Output Section */}
           <div className="space-y-6">
+            
+
+            {/* Formatting Instructions */}
+            <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
+              <Card className="shadow-card">
+                <CollapsibleTrigger asChild>
+                <CardHeader> 
+                  <CardTitle className="flex items-center justify-between w-full">
+                    Formatting Instructions 
+                    {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                  </CardTitle>
+                  <CardDescription>
+                    Format your questions according to these guidelines for automatic type detection
+                  </CardDescription>
+                  <CardFooter>
+                    <Button variant="outline" className="w-full">
+                      <a href="/api/instructions" download>Download AI Formatting Guide</a>
+                    </Button>
+                  </CardFooter>
+                </CardHeader>
+              </CollapsibleTrigger>
+                <CollapsibleContent>
+                <CardContent>
+                  <div className="space-y-4 text-sm">
+                    <div className="space-y-2">
+                      <h2 className="font-medium text-primary">Multiple Choice</h2>
+                      <div className="bg-muted/30 p-3 rounded-lg">
+                        <p className="mb-2">List options with A) B) C) D) and indicate the correct answer:</p>
+                        <pre className="text-xs text-muted-foreground whitespace-pre-wrap">What is 2+2?
+  A) 3
+  B) 4
+  C) 5
+  D) 6
+  Answer: B</pre>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <h2 className="font-medium text-primary">True/False</h2>
+                      <div className="bg-muted/30 p-3 rounded-lg">
+                        <p className="mb-2">End question with (T/F) or True/False:</p>
+                        <pre className="text-xs text-muted-foreground whitespace-pre-wrap">The Earth is round. (T/F)
+  Answer: True</pre>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <h2 className="font-medium text-primary">Short Answer</h2>
+                      <div className="bg-muted/30 p-3 rounded-lg">
+                        <p className="mb-2">Start with "SA:" or end with [Short Answer]:</p>
+                        <pre className="text-xs text-muted-foreground whitespace-pre-wrap">SA: What year did WWII end?
+  Answer: 1945</pre>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <h2 className="font-medium text-primary">Essay Questions</h2>
+                      <div className="bg-muted/30 p-3 rounded-lg">
+                        <p className="mb-2">Start with "Essay:" or end with [Essay]:</p>
+                        <pre className="text-xs text-muted-foreground whitespace-pre-wrap">Essay: Explain the causes of World War I.
+  Points: 10</pre>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <h2 className="font-medium text-primary">Fill in the Blank</h2>
+                      <div className="bg-muted/30 p-3 rounded-lg">
+                        <p className="mb-2">Use _____ for blanks:</p>
+                        <pre className="text-xs text-muted-foreground whitespace-pre-wrap">The capital of France is _____.
+  Answer: Paris</pre>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
+
             {/* Status Card */}
             <Card className="shadow-card">
               <CardHeader>
@@ -244,72 +331,6 @@ const Dashboard = () => {
               </CardContent>
             </Card>
 
-            {/* Formatting Instructions */}
-            <Card className="shadow-card">
-              <CardHeader>
-                <CardTitle>Formatting Instructions</CardTitle>
-                <CardDescription>
-                  Format your questions according to these guidelines for automatic type detection
-                </CardDescription>
-                <CardFooter>
-                  <Button variant="outline" className="w-full">
-                    <a href="/api/instructions" download>Download AI Formatting Guide</a>
-                  </Button>
-                </CardFooter>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4 text-sm">
-                  <div className="space-y-2">
-                    <h4 className="font-medium text-primary">Multiple Choice</h4>
-                    <div className="bg-muted/30 p-3 rounded-lg">
-                      <p className="mb-2">List options with A) B) C) D) and indicate the correct answer:</p>
-                      <pre className="text-xs text-muted-foreground whitespace-pre-wrap">What is 2+2?
-A) 3
-B) 4
-C) 5
-D) 6
-Answer: B</pre>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <h4 className="font-medium text-primary">True/False</h4>
-                    <div className="bg-muted/30 p-3 rounded-lg">
-                      <p className="mb-2">End question with (T/F) or True/False:</p>
-                      <pre className="text-xs text-muted-foreground whitespace-pre-wrap">The Earth is round. (T/F)
-Answer: True</pre>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <h4 className="font-medium text-primary">Short Answer</h4>
-                    <div className="bg-muted/30 p-3 rounded-lg">
-                      <p className="mb-2">Start with "SA:" or end with [Short Answer]:</p>
-                      <pre className="text-xs text-muted-foreground whitespace-pre-wrap">SA: What year did WWII end?
-Answer: 1945</pre>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <h4 className="font-medium text-primary">Essay Questions</h4>
-                    <div className="bg-muted/30 p-3 rounded-lg">
-                      <p className="mb-2">Start with "Essay:" or end with [Essay]:</p>
-                      <pre className="text-xs text-muted-foreground whitespace-pre-wrap">Essay: Explain the causes of World War I.
-Points: 10</pre>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <h4 className="font-medium text-primary">Fill in the Blank</h4>
-                    <div className="bg-muted/30 p-3 rounded-lg">
-                      <p className="mb-2">Use _____ for blanks:</p>
-                      <pre className="text-xs text-muted-foreground whitespace-pre-wrap">The capital of France is _____.
-Answer: Paris</pre>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
           </div>
         </div>
       </main>
