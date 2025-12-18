@@ -6,7 +6,7 @@ import { ThemeProvider } from './components/ui/theme-provider'
 function App() {
   return (
     <>
-      <ThemeProvider defaultTheme='dark' storageKey='vite-ui-theme'>
+      <ThemeProvider defaultTheme='system' storageKey='vite-ui-theme'>
         <Toaster position="top-center" richColors />
         <Index />
       </ThemeProvider>
