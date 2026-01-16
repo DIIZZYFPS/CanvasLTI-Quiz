@@ -6,6 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useState } from "react";
 import { Upload, FileText, Download, CheckCircle, Clock, AlertCircle, Eye, X, ChevronDown, ChevronUp, Sun, Moon } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible";
@@ -172,7 +173,7 @@ const Dashboard = () => {
                   </label>
                   <Textarea
                     id="quiz-content"
-                    placeholder="Paste your quiz questions here...&#10;&#10;Example Multiple Choice:&#10;What is the capital of France?&#10;A) London&#10;B) Berlin&#10;C) Paris&#10;D) Madrid&#10;Answer: C&#10;&#10;Example True/False:&#10;The Earth is flat. (T/F)&#10;Answer: False"
+                    placeholder="Paste your quiz questions here..."
                     className="min-h-[200px] border-input-border focus:ring-2 focus:ring-primary"
                     value={quizContent}
                     onChange={(e) => setQuizContent(e.target.value)}
@@ -237,56 +238,78 @@ const Dashboard = () => {
               </CollapsibleTrigger>
                 <CollapsibleContent>
                 <CardContent>
-                  <div className="space-y-4 text-sm">
-                    <div className="space-y-2">
-                      <h2 className="font-medium text-primary">Multiple Choice</h2>
-                      <div className="bg-muted/30 p-3 rounded-lg">
-                        <p className="mb-2">List options with A) B) C) D) and indicate the correct answer:</p>
-                        <pre className="text-xs text-muted-foreground whitespace-pre-wrap">What is 2+2?
+                  <Accordion type="single" collapsible className="w-full">
+                    <AccordionItem value="mc">
+                      <AccordionTrigger>Multiple Choice</AccordionTrigger>
+                      <AccordionContent>
+                        <div className="space-y-2 text-sm pt-1 pb-3">
+                          <p className="text-foreground">List options with A) B) C) D) and indicate the correct answer:</p>
+                          <div className="bg-muted/30 p-3 rounded-lg">
+                            <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`What is 2+2?
   A) 3
   B) 4
   C) 5
   D) 6
-  Answer: B</pre>
-                      </div>
-                    </div>
+  Answer: B`}</pre>
+                          </div>
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
 
-                    <div className="space-y-2">
-                      <h2 className="font-medium text-primary">True/False</h2>
-                      <div className="bg-muted/30 p-3 rounded-lg">
-                        <p className="mb-2">End question with (T/F) or True/False:</p>
-                        <pre className="text-xs text-muted-foreground whitespace-pre-wrap">The Earth is round. (T/F)
-  Answer: True</pre>
-                      </div>
-                    </div>
+                    <AccordionItem value="tf" >
+                      <AccordionTrigger >True/False</AccordionTrigger>
+                      <AccordionContent>
+                        <div className="space-y-2 text-sm pt-1 pb-3">
+                          <p className="text-foreground">Start with "TF:" or end question with (T/F):</p>
+                          <div className="bg-muted/30 p-3 rounded-lg">
+                            <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`TF: The Earth is round.
+  Answer: True`}</pre>
+                          </div>
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
 
-                    <div className="space-y-2">
-                      <h2 className="font-medium text-primary">Short Answer</h2>
-                      <div className="bg-muted/30 p-3 rounded-lg">
-                        <p className="mb-2">Start with "SA:" or end with [Short Answer]:</p>
-                        <pre className="text-xs text-muted-foreground whitespace-pre-wrap">SA: What year did WWII end?
-  Answer: 1945</pre>
-                      </div>
-                    </div>
+                    <AccordionItem value="sa">
+                      <AccordionTrigger >Short Answer</AccordionTrigger>
+                      <AccordionContent>
+                        <div className="space-y-2 text-sm pt-1 pb-3">
+                          <p className="text-foreground">Start with "SA:" or end with [Short Answer]:</p>
+                          <div className="bg-muted/30 p-3 rounded-lg">
+                            <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`SA: What year did WWII end?
+  Answer: 1945`}</pre>
+                          </div>
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
 
-                    <div className="space-y-2">
-                      <h2 className="font-medium text-primary">Essay Questions</h2>
-                      <div className="bg-muted/30 p-3 rounded-lg">
-                        <p className="mb-2">Start with "Essay:" or end with [Essay]:</p>
-                        <pre className="text-xs text-muted-foreground whitespace-pre-wrap">Essay: Explain the causes of World War I.
-  Points: 10</pre>
-                      </div>
-                    </div>
+                    <AccordionItem value="essay" >
+                      <AccordionTrigger >Essay Questions</AccordionTrigger>
+                      <AccordionContent>
+                        <div className="space-y-2 text-sm pt-1 pb-3">
+                          <p className="text-foreground">Start with "Essay:" or end with [Essay]:</p>
+                          <div className="bg-muted/30 p-3 rounded-lg">
+                            <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`Essay: Explain the causes of World War I.
+  Points: 10`}</pre>
+                          </div>
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
 
-                    <div className="space-y-2">
-                      <h2 className="font-medium text-primary">Fill in the Blank</h2>
-                      <div className="bg-muted/30 p-3 rounded-lg">
-                        <p className="mb-2">Use _____ for blanks:</p>
-                        <pre className="text-xs text-muted-foreground whitespace-pre-wrap">The capital of France is _____.
-  Answer: Paris</pre>
-                      </div>
-                    </div>
-                  </div>
+                    <AccordionItem value="fitb" >
+                      <AccordionTrigger >Fill in the Blank</AccordionTrigger>
+                      <AccordionContent>
+                        <div className="space-y-2 text-sm pt-1 pb-3">
+                          <p className="text-foreground">Use _____ for blanks:</p>
+                          <div className="bg-muted/30 p-3 rounded-lg">
+                            <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`The capital of France is _____.
+  Answer: Paris`}</pre>
+                          </div>
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
+
+                  <p className="text-sm text-muted-foreground">Optionally: specify points for each question by adding "Points: X" after the question text.</p>
                 </CardContent>
                 </CollapsibleContent>
               </Card>
