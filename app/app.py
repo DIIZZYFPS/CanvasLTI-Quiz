@@ -132,20 +132,26 @@ def _parse_multiple_choice(lines, index):
             "answers": answers, "correct_answer_id": correct_answer_id, "points": points}
 
 def _parse_true_false(lines, index):
-    """Parses a true/false question line, now with points."""
+    """Parses a true/false question line with 'TF:' prefix support."""
     full_text = " ".join(lines)
-    # Updated pattern to capture optional points
-    pattern = re.compile(r'^(.*?)(?:\s*\((\d+)\s*points?\))?\s*\((?:T\/F|True\/False)\)\s*Answer:\s*(True|False)$', re.IGNORECASE)
+    
+    # Matches: "TF: Question text... Answer: T" OR legacy "Question... (T/F) Answer: True"
+    # This regex handles both your NEW strict format and the natural language fallback
+    pattern = re.compile(r'^(?:TF:\s*)?(.*?)(?:\s*\((\d+)\s*points?\))?\s*(?:\((?:T\/F|True\/False)\))?\s*Answer:\s*(T|True|F|False)$', re.IGNORECASE)
     match = pattern.match(full_text)
 
-    if not match: print("True/False question format is invalid."); return None
+    if not match: 
+        print(f"True/False question format is invalid: {full_text} (Match failed)")
+        return None
 
     question_text, points, correct_answer_text = [s.strip() if s else None for s in match.groups()]
     points = points if points else "1"
-    correct_answer_text = correct_answer_text.capitalize()
+    
+    # Normalize T/t/True -> True
+    is_true = correct_answer_text.lower() in ['t', 'true']
     
     answers = [{"id": f"q{index}_ans0", "text": "True"}, {"id": f"q{index}_ans1", "text": "False"}]
-    correct_answer_id = answers[0]['id'] if correct_answer_text == "True" else answers[1]['id']
+    correct_answer_id = answers[0]['id'] if is_true else answers[1]['id']
 
     return {"id": f"q{index}", "type": "true_false_question", "question_text": question_text,
             "answers": answers, "correct_answer_id": correct_answer_id, "points": points}
@@ -216,6 +222,7 @@ def parse_quiz_text(text_input):
         print(f"Parsing block {i}: {block}")
         lines = [line.strip() for line in block.split('\n') if line.strip()]
         full_block_text = " ".join(lines) # Used for simple keyword checks
+        full_lower = full_block_text.lower()
 
         question_data = None
 
@@ -223,23 +230,38 @@ def parse_quiz_text(text_input):
         if re.match(r'^\d+[\.\)]\s+', lines[0]):
             lines[0] = re.sub(r'^\d+[\.\)]\s+', '', lines[0])
             full_block_text = " ".join(lines)
+            full_lower = full_block_text.lower()
         
-        # Router logic to determine the question type
-        if "Answer:" in full_block_text and re.search(r'\((T/F|True/False)\)', full_block_text, re.IGNORECASE):
-            print(f"Detected True/False question in block {i}")
+        # --- Router logic ---
+        
+        # 1. Check explicit prefixes first (Highest priority, matching your instructions)
+        if full_lower.startswith("tf:") or full_lower.startswith("true/false:"):
+            print(f"Detected True/False (Prefix) in block {i}")
             question_data = _parse_true_false(lines, i)
-        elif "Answer:" in full_block_text and (full_block_text.lower().startswith("sa:") or "[short answer]" in full_block_text.lower()):
-            print(f"Detected Short Answer question in block {i}")
+
+        elif full_lower.startswith("sa:") or "[short answer]" in full_lower:
+            print(f"Detected Short Answer (Prefix) in block {i}")
             question_data = _parse_short_answer(full_block_text, i)
-        elif re.search(r'_{2,}', full_block_text) and "Answer:" in full_block_text:
-            print(f"Detected Fill-in-the-Blank question in block {i}")
-            question_data = _parse_fill_in_the_blank(full_block_text, i)
-        elif "Answer:" in full_block_text and re.search(r'[A-Z]\)', full_block_text, re.IGNORECASE):
-            print(f"Detected Multiple Choice question in block {i}")
-            question_data = _parse_multiple_choice(lines, i)
-        elif full_block_text.lower().startswith("essay:") or "[essay]" in full_block_text.lower():
-            print(f"Detected Essay question in block {i}")
+        
+        elif full_lower.startswith("essay:") or "[essay]" in full_lower:
+            print(f"Detected Essay (Prefix) in block {i}")
             question_data = _parse_essay(full_block_text, i)
+
+        # 2. Check Structural Indicators (Fallbacks)
+        elif re.search(r'_{2,}', full_block_text) and "answer:" in full_lower:
+            print(f"Detected Fill-in-the-Blank (Structure) in block {i}")
+            question_data = _parse_fill_in_the_blank(full_block_text, i)
+
+        elif "answer:" in full_lower and re.search(r'\n\s*[A-Z]\)', "\n"+"\n".join(lines), re.IGNORECASE):
+            # We join lines here to ensure we are looking for options in the body, not just the single line string
+            print(f"Detected Multiple Choice (Structure) in block {i}")
+            question_data = _parse_multiple_choice(lines, i)
+            
+        # 3. Last Resort Legacy Check
+        elif "answer:" in full_lower and re.search(r'\((T/F|True/False)\)', full_block_text, re.IGNORECASE):
+            print(f"Detected True/False (Legacy Suffix) in block {i}")
+            question_data = _parse_true_false(lines, i)
+
         else:
             print(f"Warning: Could not determine question type for block {i} - skipping.")
         
