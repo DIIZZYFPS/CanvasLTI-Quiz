@@ -229,10 +229,17 @@ const Dashboard = () => {
                   </CardTitle>
                   <CardDescription>
                     Format your questions according to these guidelines for automatic type detection
+                    <Separator className="my-2"/>
+                    Use the button below to download a detailed guide. Pair it with your preferred AI tool to format large sets of questions quickly.
                   </CardDescription>
                   <CardFooter>
-                    <Button variant="outline" className="w-full">
-                      <a href="/api/instructions" download>Download AI Formatting Guide</a>
+                    <Button 
+                      variant="outline" 
+                      className="w-full my-2" 
+                      asChild
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <a href="/api/instructions" download>Download Full Formatting Guide</a>
                     </Button>
                   </CardFooter>
                 </CardHeader>

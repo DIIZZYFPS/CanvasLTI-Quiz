@@ -112,7 +112,11 @@ def _parse_multiple_choice(lines, index):
     pattern = re.compile(r'^(.*?)(?:\s*\((\d+)\s*points?\))?\s*((?:[A-Z]\).*?)+)\s*Answer:\s*([A-Z])$', re.IGNORECASE | re.DOTALL)
     match = pattern.match(full_text)
     
-    if not match: return None
+    if not match: return {"id": f"error_{index}",
+                "type": "error",
+                "question_text": full_text,
+                "error": f"Question format is invalid: {full_text}"
+        }
 
     question_text, points, _, correct_answer_letter = [s.strip() if s else None for s in match.groups()]
     points = points if points else "1"
@@ -142,7 +146,11 @@ def _parse_true_false(lines, index):
 
     if not match: 
         print(f"True/False question format is invalid: {full_text} (Match failed)")
-        return None
+        return {"id": f"error_{index}",
+                "type": "error",
+                "question_text": full_text,
+                "error": f"True/False question format is invalid: {full_text}"
+        }
 
     question_text, points, correct_answer_text = [s.strip() if s else None for s in match.groups()]
     points = points if points else "1"
@@ -162,7 +170,11 @@ def _parse_short_answer(line, index):
     pattern = re.compile(r'^(?:SA:\s*)?(.*?)(?:\[Short Answer\])?(?:\s*\((\d+)\s*points?\))?\s*Answer:\s*(.*)$', re.IGNORECASE)
     match = pattern.match(line.strip())
     
-    if not match: return None
+    if not match: return {"id": f"error_{index}",
+                "type": "error",
+                "question_text": line,
+                "error": f"Question format is invalid: {line}"
+        }
         
     question_text, points, correct_answer = [s.strip() if s else None for s in match.groups()]
     points = points if points else "1"
@@ -176,7 +188,11 @@ def _parse_fill_in_the_blank(line, index):
     pattern = re.compile(r'^(.*?)\s*_{2,}\s*(.*?)(?:\s*\((\d+)\s*points?\))?\s*Answer:\s*(.*)$', re.IGNORECASE)
     match = pattern.match(line)
     
-    if not match: return None
+    if not match: return {"id": f"error_{index}",
+                "type": "error",
+                "question_text": line,
+                "error": f"Question format is invalid: {line}"
+        }
         
     question_text_start = match.group(1).strip()
     question_text_end = match.group(2).strip()
@@ -195,7 +211,11 @@ def _parse_essay(line, index):
     match = pattern.match(line.strip())
     
     if not match:
-        return None
+        return {"id": f"error_{index}",
+                "type": "error",
+                "question_text": line,
+                "error": f"Question format is invalid: {line}"
+        }
         
     question_text = match.group(1).strip()
     points = match.group(2) if match.group(2) else "1" # Extract points if available
