@@ -207,7 +207,7 @@ def _parse_fill_in_the_blank(line, index):
 
 def _parse_essay(line, index):
     """Parses an essay question line."""
-    pattern = re.compile(r'^(?:Essay:\s*)?(.*?)(?:\[Essay\])?\s*(?:Points:\s*(\d+))?$', re.IGNORECASE)
+    pattern = re.compile(r'^(?:Essay:\s*)?(.*?)(?:\[Essay\])?(?:\s*\((\d+)\s*points?\))?$', re.IGNORECASE)
     match = pattern.match(line.strip())
     
     if not match:
