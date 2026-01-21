@@ -26,6 +26,7 @@ const Dashboard = () => {
   const [isExpanded, setIsExpanded] = useState(false);
   const { theme, setTheme } = useTheme();
 
+  const errorCount = previewData.filter((q) => q.type === 'error').length;
 
   const handleFileUpload = (file: File) => {
     setSelectedFile(file);
@@ -196,7 +197,7 @@ const Dashboard = () => {
                     variant="outline"
                     className="bg-gradient-primary hover:shadow-glow transition-all duration-300 col-span-1 md:col-span-2"
                   >
-                    Export to QTI ZIP
+                    Preview and Export to QTI ZIP
                   </Button>
                   {/*
                   <Button 
@@ -364,7 +365,7 @@ const Dashboard = () => {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Eye className="w-5 h-5" />
-              Preview Questions ({previewData.length} questions)
+              Preview Questions ({previewData.length} questions{errorCount > 0 && <span className="text-destructive">, {errorCount} errors</span>})
             </DialogTitle>
             <DialogDescription>
               Review your converted questions before exporting to {exportType.toUpperCase()}
@@ -387,6 +388,13 @@ const Dashboard = () => {
                   </CardHeader>
                   <CardContent className="pt-0 space-y-3">
                     <p className="font-medium">{question.question_text || question.question}</p>
+
+                    {/* Check if question is an error message */}
+                    {question.error && (
+                      <div className="p-3 bg-destructive/10 border border-destructive/50 rounded text-sm text-destructive">
+                        {question.error}
+                      </div>
+                    )}
 
                     {/* Render answers if present */}
                     {Array.isArray(question.answers) && question.answers.length > 1 && (

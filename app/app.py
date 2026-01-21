@@ -263,7 +263,13 @@ def parse_quiz_text(text_input):
             question_data = _parse_true_false(lines, i)
 
         else:
-            print(f"Warning: Could not determine question type for block {i} - skipping.")
+            print(f"Warning: Could not determine question type for block {i} - skipping and flagging as error.")
+            question_data = {
+                "id": f"error_{i}",
+                "type": "error",
+                "question_text": block,
+                "error": f"Could not determine question type for this question block. {block}",
+            }
         
         if question_data:
             questions.append(question_data)
