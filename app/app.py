@@ -112,15 +112,38 @@ def extract_points(text, default="1"):
     - Points: 10, Score: 10
     Returns the points as a string, e.g., "10".
     """
-    pattern = re.compile(r'(?:(?:\(|\[)?\b(?:Points?|Score|Pts?)\b:?\s*(\d+)(?:\)|\])?)|(?:\(\s*(\d+)\s*(?:points?|pts?)\s*\))', re.IGNORECASE)
+    pattern = re.compile(
+        r'(?:'
+        r'[\(\[]\s*\b(?:Points?|Score|Pts?)\b:?\s*(?P<label_bracketed>\d+)\s*[\)\]]'  # [Points: 10], (Score 5)
+        r'|'
+        r'\b(?:Points?|Score|Pts?)\b:?\s*(?P<label>\d+)'                              # Points: 10
+        r'|'
+        r'\(\s*(?P<numeric_first>\d+)\s*(?:points?|pts?)\s*\)'                        # (10 points), (5 pts)
+        r')',
+        re.IGNORECASE,
+    )
     match = pattern.search(text)
     if match:
-        return match.group(1) or match.group(2)
+        for group_name in ("label_bracketed", "label", "numeric_first"):
+            value = match.group(group_name)
+            if value is not None:
+                return value
     return default
 
 def _clean_points_text(text):
     """Removes the points string from the question text to clean it up."""
-    return re.sub(r'(?:(?:\(|\[)?\b(?:Points?|Score|Pts?)\b:?\s*(\d+)(?:\)|\])?)|(?:\(\s*(\d+)\s*(?:points?|pts?)\s*\))', '', text, flags=re.IGNORECASE).strip()
+    return re.sub(
+        r'(?:'
+        r'[\(\[]\s*\b(?:Points?|Score|Pts?)\b:?\s*\d+\s*[\)\]]'   # [Points: 10], (Score 5)
+        r'|'
+        r'\b(?:Points?|Score|Pts?)\b:?\s*\d+'                    # Points: 10
+        r'|'
+        r'\(\s*\d+\s*(?:points?|pts?)\s*\)'                      # (10 points), (5 pts)
+        r')',
+        '',
+        text,
+        flags=re.IGNORECASE,
+    ).strip()
 
 def _parse_multiple_choice(lines, index):
     """Parses a multiple-choice question with diagnostic error messages."""
@@ -130,7 +153,7 @@ def _parse_multiple_choice(lines, index):
     # 1. Extract Answer
     answer_match = re.search(r'Answer:\s*([A-Z])', full_text, re.IGNORECASE)
     if not answer_match:
-         return {
+        return {
             "id": f"error_{index}",
             "type": "error",
             "question_text": full_text,
@@ -144,7 +167,7 @@ def _parse_multiple_choice(lines, index):
     for line in lines:
         match = re.match(r'^([A-Z])[\)\.]\s*(.*)', line.strip())
         if match:
-             options.append({"id": match.group(1).upper(), "text": match.group(2).strip()})
+            options.append({"id": match.group(1).upper(), "text": match.group(2).strip()})
     
     if len(options) < 2:
         return {
@@ -165,7 +188,7 @@ def _parse_multiple_choice(lines, index):
     question_text = _clean_points_text(question_text)
 
     if not question_text:
-         return {"id": f"error_{index}", "type": "error", "question_text": full_text, "error": "Question text is missing. The question prompt must appear before the options."}
+        return {"id": f"error_{index}", "type": "error", "question_text": full_text, "error": "Question text is missing. The question prompt must appear before the options."}
 
     # 4. Validate Answer matches an Option
     correct_answer_id = None
@@ -207,7 +230,7 @@ def _parse_true_false(lines, index):
     answer_match = re.search(r'Answer:\s*(T|True|F|False)', clean_text, re.IGNORECASE)
     
     if not answer_match:
-         return {
+        return {
             "id": f"error_{index}",
             "type": "error",
             "question_text": full_text,
@@ -265,7 +288,7 @@ def _parse_short_answer(line, index):
     
     correct_answer = parts[1].strip()
     if not correct_answer:
-         return {
+        return {
             "id": f"error_{index}",
             "type": "error",
             "question_text": line,
@@ -296,7 +319,7 @@ def _parse_fill_in_the_blank(line, index):
     correct_answer = parts[1].strip()
     
     if not re.search(r'_{2,}', question_text):
-         return {
+        return {
             "id": f"error_{index}",
             "type": "error",
             "question_text": line,
@@ -397,10 +420,10 @@ def parse_quiz_text(text_input):
             # Enhanced Error Identification
             error_hint = "Format not recognized."
             
-            if re.search(r'\n[A-Z][\)\.]', "\n"+"\n".join(lines)):
+            if re.search(r'\n[A-Z][\)\.]', "\n"+"\n".join(lines), re.IGNORECASE):
                 error_hint = "Looks like Multiple Choice, but check if the 'Answer:' line is correct."
-            elif re.search(r'_{3,}', block):
-                error_hint = "Looks like Fill-in-the-Blank, but check if 'Answer:' line is present."
+            elif re.search(r'_{1,}', block):
+                error_hint = "Looks like Fill-in-the-Blank, but check if 'Answer:' line is present. Or if there are enough underscores for blanks."
             elif "True" in block or "False" in block:
                 error_hint = "Looks like True/False. Ensure it ends with 'Answer: True' or 'Answer: False'."
 

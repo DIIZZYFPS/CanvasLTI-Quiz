@@ -317,7 +317,7 @@ const Dashboard = () => {
                     </AccordionItem>
                   </Accordion>
 
-                  <p className="text-sm text-muted-foreground">Points can be specified anywhere in the question, e.g., "(5 pts)", "[10 points]", or "Points: 5".</p>
+                  <p className="text-sm text-muted-foreground">Points can be specified anywhere in the question, e.g., "(5 pts)", "(10 points)", or "Points: 5".</p>
                 </CardContent>
                 </CollapsibleContent>
               </Card>
