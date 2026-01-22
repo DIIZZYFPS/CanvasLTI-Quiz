@@ -105,126 +105,237 @@ def get_jwks():
 
 # Helpers
 
+def extract_points(text, default="1"):
+    """
+    Extracts points from a string in various formats:
+    - (10 points), (5 pts)
+    - Points: 10, Score: 10
+    Returns the points as a string, e.g., "10".
+    """
+    pattern = re.compile(r'(?:(?:\(|\[)?\b(?:Points?|Score|Pts?)\b:?\s*(\d+)(?:\)|\])?)|(?:\(\s*(\d+)\s*(?:points?|pts?)\s*\))', re.IGNORECASE)
+    match = pattern.search(text)
+    if match:
+        return match.group(1) or match.group(2)
+    return default
+
+def _clean_points_text(text):
+    """Removes the points string from the question text to clean it up."""
+    return re.sub(r'(?:(?:\(|\[)?\b(?:Points?|Score|Pts?)\b:?\s*(\d+)(?:\)|\])?)|(?:\(\s*(\d+)\s*(?:points?|pts?)\s*\))', '', text, flags=re.IGNORECASE).strip()
+
 def _parse_multiple_choice(lines, index):
-    """Parses a multiple-choice question line, now with points."""
+    """Parses a multiple-choice question with diagnostic error messages."""
     full_text = " ".join(lines)
-    # Updated pattern to capture optional points
-    pattern = re.compile(r'^(.*?)(?:\s*\((\d+)\s*points?\))?\s*((?:[A-Z]\).*?)+)\s*Answer:\s*([A-Z])$', re.IGNORECASE | re.DOTALL)
-    match = pattern.match(full_text)
+    points = extract_points(full_text)
     
-    if not match: return {"id": f"error_{index}",
-                "type": "error",
-                "question_text": full_text,
-                "error": f"Question format is invalid: {full_text}"
+    # 1. Extract Answer
+    answer_match = re.search(r'Answer:\s*([A-Z])', full_text, re.IGNORECASE)
+    if not answer_match:
+         return {
+            "id": f"error_{index}",
+            "type": "error",
+            "question_text": full_text,
+            "error": "Missing or Invalid Answer. Ensure the question ends with 'Answer: [Letter]' (e.g., 'Answer: B')."
+        }
+    correct_char = answer_match.group(1).upper()
+
+    # 2. Extract Options
+    options = []
+    # Identify lines starting with "A)", "B.", etc.
+    for line in lines:
+        match = re.match(r'^([A-Z])[\)\.]\s*(.*)', line.strip())
+        if match:
+             options.append({"id": match.group(1).upper(), "text": match.group(2).strip()})
+    
+    if len(options) < 2:
+        return {
+            "id": f"error_{index}", 
+            "type": "error", 
+            "question_text": full_text, 
+            "error": "Insufficient options found. List at least two options starting with 'A)', 'B)', etc."
         }
 
-    question_text, points, _, correct_answer_letter = [s.strip() if s else None for s in match.groups()]
-    points = points if points else "1"
-    correct_answer_letter = correct_answer_letter.upper()
+    # 3. Extract Question Text (everything before the first option)
+    question_lines = []
+    for line in lines:
+        if re.match(r'^[A-Z][\)\.]', line.strip()):
+            break
+        question_lines.append(line)
     
-    answers, correct_answer_id = [], None
-    option_lines = [line for line in lines if re.match(r'^[A-Z]\)', line.strip())]
-    for i, option_line in enumerate(option_lines):
-        letter = option_line.strip()[0].upper()
-        text = option_line.strip()[2:].strip()
-        answer_id = f"q{index}_ans{i}"
-        answers.append({"id": answer_id, "text": text})
-        if letter == correct_answer_letter:
-            correct_answer_id = answer_id
+    question_text = " ".join(question_lines).strip()
+    question_text = _clean_points_text(question_text)
+
+    if not question_text:
+         return {"id": f"error_{index}", "type": "error", "question_text": full_text, "error": "Question text is missing. The question prompt must appear before the options."}
+
+    # 4. Validate Answer matches an Option
+    correct_answer_id = None
+    answers = []
+    
+    for i, opt in enumerate(options):
+        ans_id = f"q{index}_ans{i}"
+        answers.append({"id": ans_id, "text": opt['text']})
+        if opt['id'] == correct_char:
+            correct_answer_id = ans_id
             
-    return {"id": f"q{index}", "type": "multiple_choice_question", "question_text": question_text,
-            "answers": answers, "correct_answer_id": correct_answer_id, "points": points}
+    if not correct_answer_id:
+        valid_options = ", ".join([o['id'] for o in options])
+        return {
+            "id": f"error_{index}", 
+            "type": "error", 
+            "question_text": question_text, 
+            "error": f"The answer '{correct_char}' does not match any of the provided options ({valid_options})."
+        }
+
+    return {
+        "id": f"q{index}", 
+        "type": "multiple_choice_question", 
+        "question_text": question_text,
+        "answers": answers, 
+        "correct_answer_id": correct_answer_id, 
+        "points": points
+    }
 
 def _parse_true_false(lines, index):
-    """Parses a true/false question line with 'TF:' prefix support."""
+    """Parses a true/false question with diagnostic error messages."""
     full_text = " ".join(lines)
+    points = extract_points(full_text)
     
-    # Matches: "TF: Question text... Answer: T" OR legacy "Question... (T/F) Answer: True"
-    # This regex handles both your NEW strict format and the natural language fallback
-    pattern = re.compile(r'^(?:TF:\s*)?(.*?)(?:\s*\((\d+)\s*points?\))?\s*(?:\((?:T\/F|True\/False)\))?\s*Answer:\s*(T|True|F|False)$', re.IGNORECASE)
-    match = pattern.match(full_text)
-
-    if not match: 
-        print(f"True/False question format is invalid: {full_text} (Match failed)")
-        return {"id": f"error_{index}",
-                "type": "error",
-                "question_text": full_text,
-                "error": f"True/False question format is invalid: {full_text}"
+    # 1. Clean up prefix if present
+    clean_text = re.sub(r'^(?:TF:|True/False:)\s*', '', full_text, flags=re.IGNORECASE)
+    
+    # 2. Find Answer
+    answer_match = re.search(r'Answer:\s*(T|True|F|False)', clean_text, re.IGNORECASE)
+    
+    if not answer_match:
+         return {
+            "id": f"error_{index}",
+            "type": "error",
+            "question_text": full_text,
+            "error": "Missing or Invalid Answer. Ensure the question ends with 'Answer: True' or 'Answer: False'."
         }
 
-    question_text, points, correct_answer_text = [s.strip() if s else None for s in match.groups()]
-    points = points if points else "1"
-    
-    # Normalize T/t/True -> True
-    is_true = correct_answer_text.lower() in ['t', 'true']
+    # 3. Extract Question Text
+    question_part = re.split(r'Answer:', clean_text, flags=re.IGNORECASE)[0].strip()
+    question_part = re.sub(r'\((?:T/F|True/False)\)', '', question_part, flags=re.IGNORECASE) # Remove (T/F) hint
+    question_part = _clean_points_text(question_part)
+
+    if not question_part:
+        return {
+            "id": f"error_{index}",
+            "type": "error",
+            "question_text": full_text,
+            "error": "Question text is empty."
+        }
+
+    correct_str = answer_match.group(1).lower()
+    is_true = correct_str in ['t', 'true']
     
     answers = [{"id": f"q{index}_ans0", "text": "True"}, {"id": f"q{index}_ans1", "text": "False"}]
     correct_answer_id = answers[0]['id'] if is_true else answers[1]['id']
 
-    return {"id": f"q{index}", "type": "true_false_question", "question_text": question_text,
-            "answers": answers, "correct_answer_id": correct_answer_id, "points": points}
+    return {
+        "id": f"q{index}", 
+        "type": "true_false_question", 
+        "question_text": question_part,
+        "answers": answers, 
+        "correct_answer_id": correct_answer_id, 
+        "points": points
+    }
 
 def _parse_short_answer(line, index):
-    """Parses a short answer question line, now with points."""
-    # Updated pattern to capture optional points
-    pattern = re.compile(r'^(?:SA:\s*)?(.*?)(?:\[Short Answer\])?(?:\s*\((\d+)\s*points?\))?\s*Answer:\s*(.*)$', re.IGNORECASE)
-    match = pattern.match(line.strip())
+    points = extract_points(line)
     
-    if not match: return {"id": f"error_{index}",
-                "type": "error",
-                "question_text": line,
-                "error": f"Question format is invalid: {line}"
+    # Strip prefix
+    clean_line = re.sub(r'^(?:SA:|Short Answer:)\s*', '', line, flags=re.IGNORECASE)
+    
+    # Check for Answer
+    parts = re.split(r'Answer:', clean_line, flags=re.IGNORECASE)
+    
+    if len(parts) < 2:
+        return {
+            "id": f"error_{index}",
+            "type": "error",
+            "question_text": line,
+            "error": "Missing 'Answer:'. Short Answer questions must end with 'Answer: [Your Answer]'."
         }
         
-    question_text, points, correct_answer = [s.strip() if s else None for s in match.groups()]
-    points = points if points else "1"
+    question_text = parts[0].strip()
+    question_text = re.sub(r'\[Short Answer\]', '', question_text, flags=re.IGNORECASE)
+    question_text = _clean_points_text(question_text)
     
-    return {"id": f"q{index}", "type": "short_answer_question", "question_text": question_text,
-            "answers": [{"id": f"q{index}_ans0", "text": correct_answer}], "points": points}
+    correct_answer = parts[1].strip()
+    if not correct_answer:
+         return {
+            "id": f"error_{index}",
+            "type": "error",
+            "question_text": line,
+            "error": "Answer content is empty."
+        }
+
+    return {
+        "id": f"q{index}", 
+        "type": "short_answer_question", 
+        "question_text": question_text,
+        "answers": [{"id": f"q{index}_ans0", "text": correct_answer}], 
+        "points": points
+    }
 
 def _parse_fill_in_the_blank(line, index):
-    """Parses a fill-in-the-blank question line, now with points."""
-    # Updated pattern to capture optional points
-    pattern = re.compile(r'^(.*?)\s*_{2,}\s*(.*?)(?:\s*\((\d+)\s*points?\))?\s*Answer:\s*(.*)$', re.IGNORECASE)
-    match = pattern.match(line)
+    points = extract_points(line)
     
-    if not match: return {"id": f"error_{index}",
-                "type": "error",
-                "question_text": line,
-                "error": f"Question format is invalid: {line}"
+    parts = re.split(r'Answer:', line, flags=re.IGNORECASE)
+    if len(parts) < 2:
+        return {
+            "id": f"error_{index}",
+            "type": "error",
+            "question_text": line,
+            "error": "Missing 'Answer:'. Fill-in-the-blank questions must end with 'Answer: [word]'."
         }
         
-    question_text_start = match.group(1).strip()
-    question_text_end = match.group(2).strip()
-    points = match.group(3) if match.group(3) else "1"
-    correct_answer = match.group(4).strip()
+    question_text = parts[0].strip()
+    correct_answer = parts[1].strip()
     
-    question_text = f"{question_text_start} _____ {question_text_end}".strip()
+    if not re.search(r'_{2,}', question_text):
+         return {
+            "id": f"error_{index}",
+            "type": "error",
+            "question_text": line,
+            "error": "No blank found. Use underscores (e.g., '_____') to indicate where the blank should be."
+        }
+    
+    question_text = _clean_points_text(question_text)
 
-    return {"id": f"q{index}", "type": "fill_in_the_blank_question", "question_text": question_text,
-            "answers": [{"id": f"q{index}_ans0", "text": correct_answer}], "points": points}
+    return {
+        "id": f"q{index}", 
+        "type": "fill_in_the_blank_question", 
+        "question_text": question_text,
+        "answers": [{"id": f"q{index}_ans0", "text": correct_answer}], 
+        "points": points
+    }
 
 
 def _parse_essay(line, index):
     """Parses an essay question line."""
-    pattern = re.compile(r'^(?:Essay:\s*)?(.*?)(?:\[Essay\])?(?:\s*\((\d+)\s*points?\))?$', re.IGNORECASE)
-    match = pattern.match(line.strip())
+    points = extract_points(line)
     
-    if not match:
-        return {"id": f"error_{index}",
-                "type": "error",
-                "question_text": line,
-                "error": f"Question format is invalid: {line}"
+    # Clean up prefixes and tags
+    clean_line = re.sub(r'^(?:Essay:)\s*', '', line, flags=re.IGNORECASE)
+    clean_line = re.sub(r'\[Essay\]', '', clean_line, flags=re.IGNORECASE)
+    question_text = _clean_points_text(clean_line)
+    
+    if not question_text:
+        return {
+            "id": f"error_{index}",
+            "type": "error",
+            "question_text": line,
+            "error": "Essay question text is empty."
         }
-        
-    question_text = match.group(1).strip()
-    points = match.group(2) if match.group(2) else "1" # Extract points if available
 
     return {
         "id": f"q{index}",
         "type": "essay_question",
         "question_text": question_text,
-        "answers": [], # Essay questions have no pre-defined answers
+        "answers": [], 
         "points": points
     }
 
@@ -283,12 +394,23 @@ def parse_quiz_text(text_input):
             question_data = _parse_true_false(lines, i)
 
         else:
-            print(f"Warning: Could not determine question type for block {i} - skipping and flagging as error.")
+            # Enhanced Error Identification
+            error_hint = "Format not recognized."
+            
+            if re.search(r'\n[A-Z][\)\.]', "\n"+"\n".join(lines)):
+                error_hint = "Looks like Multiple Choice, but check if the 'Answer:' line is correct."
+            elif re.search(r'_{3,}', block):
+                error_hint = "Looks like Fill-in-the-Blank, but check if 'Answer:' line is present."
+            elif "True" in block or "False" in block:
+                error_hint = "Looks like True/False. Ensure it ends with 'Answer: True' or 'Answer: False'."
+
+            print(f"Warning: Could not determine question type for block {i}. {error_hint}")
+            
             question_data = {
                 "id": f"error_{i}",
                 "type": "error",
                 "question_text": block,
-                "error": f"Could not determine question type for this question block. {block}",
+                "error": f"{error_hint} Please refer to the formatting guide.",
             }
         
         if question_data:
