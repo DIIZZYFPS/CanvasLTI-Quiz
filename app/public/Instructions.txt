@@ -1,75 +1,59 @@
-Objective: Reformat a given set of quiz questions to be compatible with the Canvas QTI Converter tool.
+CANVAS QTI CONVERTER - FORMATTING GUIDE
 
-Input: A list of quiz questions in any format.
+This guide explains how to format your quiz questions so they can be automatically converted into a Canvas QTI import package. 
 
-Output: A plain text file where each question is formatted according to the rules below. Each question should be separated by a blank line.
+*** GENERAL RULES ***
+1. Separate Questions: Leave at least one blank line between each question block.
+2. Points (Optional): You can specify point values anywhere in the question text. 
+   Supported formats: "(1 point)", "(5 pts)", "[Points: 10]", "Points: 5", "Score: 2".
+   Default: 1 point if not specified.
+3. Validation: The tool will check your syntax. If you forget an "Answer:" line or have missing options, it will flag the error.
 
-Formatting Rules by Question Type:
-1. Multiple Choice Questions
+*** QUESTION TYPES ***
 
-Structure:
+1. MULTIPLE CHOICE
+   - Usage: Standard questions with options.
+   - Requirement: Question text, followed by options (A, B, C...), followed by "Answer: [Letter]".
+   
+   Example:
+   Which programming language is known as the language of the web? (2 pts)
+   A) Python
+   B) JavaScript
+   C) C++
+   D) Java
+   Answer: B
 
-The question text. You can optionally include point values in parentheses, e.g., (2 points).
+2. TRUE/FALSE
+   - Usage: Binary True/False choice.
+   - Requirement: Start with "TF:" OR end with "Answer: True" or "Answer: False".
+   
+   Example 1 (Standard):
+   TF: The sun rises in the west. (1 point)
+   Answer: False
 
-Each multiple-choice option on a new line, formatted with a letter and a parenthesis, e.g., A) ..., B) ....
+   Example 2 (Compact):
+   Water boils at 100 degrees Celsius. (T/F) Answer: True
 
-The correct answer on a new line, formatted as Answer: <Correct Letter>.
+3. SHORT ANSWER
+   - Usage: Questions requiring a typed word or phrase match.
+   - Requirement: Start with "SA:" OR end with "[Short Answer]". Must have "Answer: [text]".
+   
+   Example:
+   SA: What is the capital of France? (2 points)
+   Answer: Paris
 
-Example:
+4. FILL IN THE BLANK
+   - Usage: Sentence completion.
+   - Requirement: Use underscores (at least 2, e.g., "_____") to mark the blank.
+   
+   Example:
+   The chemical symbol for water is _____. (3 pts)
+   Answer: H2O
 
-Which of these is a JavaScript framework? (2 points)
-A) Django
-B) Laravel
-C) React
-D) Flask
-Answer: C
-2. True/False Questions
-
-Structure:
-
-The question text, followed by (T/F) or (True/False).
-
-You can optionally include point values in parentheses, e.g., (1 point).
-
-The correct answer on a new line, formatted as Answer: True or Answer: False.
-
-Example:
-
-The chemical symbol for Gold is Au. (1 point) (T/F) Answer: True
-3. Short Answer Questions
-
-Structure:
-
-The question must begin with SA: or end with [Short Answer].
-
-You can optionally include point values in parentheses, e.g., (1 point).
-
-The correct answer must be on the same line, formatted as Answer: <Correct Answer>.
-
-Example:
-
-SA: What is the name of the galaxy that contains our Solar System? (1 point) Answer: Milky Way
-4. Fill in the Blank Questions
-
-Structure:
-
-The question text, with the blank space indicated by two or more underscores (__).
-
-You can optionally include point values in parentheses, e.g., (3 points).
-
-The correct answer on the same line, formatted as Answer: <Correct Answer>.
-
-Example:
-
-To infinity, and _____! (3 points) Answer: beyond
-5. Essay Questions
-
-Structure:
-
-The question must begin with Essay: or end with [Essay].
-
-You can optionally include point values in the format Points: <Number>, e.g., Points: 5.
-
-Example:
-
-Essay: Describe the difference between a list and a tuple in Python. Points: 5
+5. ESSAY
+   - Usage: Open-ended text response (manual grading).
+   - Requirement: Start with "Essay:" OR end with "[Essay]".
+   
+   Example:
+   Essay: Discuss the socio-economic impacts of the Industrial Revolution.
+   Points: 10
