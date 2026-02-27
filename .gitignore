@@ -7,7 +7,7 @@ __pycache__/
 *.so
 
 app/config/private.key
-
+/qti-upload-test/
 node_modules/
 package-lock.json
 # Distribution / packaging
