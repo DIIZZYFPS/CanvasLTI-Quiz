@@ -71,28 +71,24 @@ def get_lti_config_path():
     base_path = os.path.dirname(os.path.abspath(__file__))
     config_path = os.path.join(base_path, 'config', 'config.json')
     
-    # Check if we are in a serverless env (missing private key on disk)
+    # Check if we are in a serverless/Vercel env (missing private key on disk)
     private_key_path = os.path.join(base_path, 'config', 'private.key')
     
     if not os.path.exists(private_key_path):
         env_key = os.environ.get("LTI_PRIVATE_KEY")
         if env_key:
-            # 1. Prepare /tmp paths
             tmp_dir = tempfile.gettempdir()
             tmp_priv_path = os.path.join(tmp_dir, 'private.key')
             tmp_pub_path = os.path.join(tmp_dir, 'public.key')
             
-            # 2. Write Private Key from Env
-            with open(tmp_priv_path, 'w') as f:
-                f.write(env_key)
-            
-            # 3. Copy Public Key from source to /tmp (since it exists in your repo)
+            # 1. Write Keys to /tmp
+            with open(tmp_priv_path, 'w') as f: f.write(env_key)
             src_pub_path = os.path.join(base_path, 'config', 'public.key')
             if os.path.exists(src_pub_path):
                 import shutil
                 shutil.copy2(src_pub_path, tmp_pub_path)
             
-            # 4. Generate the ephemeral config pointing to /tmp for BOTH keys
+            # 2. Return transformed config
             return create_ephemeral_config(config_path, tmp_priv_path, tmp_pub_path)
 
     return config_path
@@ -102,17 +98,38 @@ def create_ephemeral_config(original_path, actual_priv_path, actual_pub_path):
     with open(original_path, 'r') as f:
         config_data = json.load(f)
     
-    for issuer in config_data:
-        for config_entry in config_data[issuer]:
-            config_entry["private_key_file"] = actual_priv_path
-            config_entry["public_key_file"] = actual_pub_path # Map the public key too
+    # GET SOURCE OF TRUTH: Use the domain defined in your env vars
+    # (Existing line in your app: CANVAS_DOMAIN = os.getenv('CANVAS_DOMAIN', '...'))
+    target_domain = os.getenv('CANVAS_DOMAIN', 'http://canvas.docker:8081').rstrip('/')
+    
+    new_config = {}
+    for issuer, entries in config_data.items():
+        updated_entries = []
+        for entry in entries:
+            # Inject key paths
+            entry["private_key_file"] = actual_priv_path
+            entry["public_key_file"] = actual_pub_path
+            
+            # RE-WIRE HOSTNAMES: Swap 'canvas.docker:8081' with your public CANVAS_DOMAIN
+            for key in ["auth_login_url", "auth_token_url", "key_set_url"]:
+                if key in entry and "canvas.docker" in entry[key]:
+                    # This replaces the docker host with whatever is in your Vercel env
+                    entry[key] = entry[key].replace("http://canvas.docker:8081", target_domain)
+            
+            updated_entries.append(entry)
         
+        # Ensure the issuer index matches what Canvas actually sends
+        # If Canvas is sending its real domain as 'iss', we need a key for it
+        new_config[issuer] = updated_entries
+        if target_domain not in new_config:
+            new_config[target_domain] = updated_entries
+            
     tmp_config_path = os.path.join(tempfile.gettempdir(), 'config.json')
     with open(tmp_config_path, 'w') as f:
-        json.dump(config_data, f)
+        json.dump(new_config, f)
         
     return tmp_config_path
-    
+
 def get_launch_data_storage():
     return FlaskCacheDataStorage(cache)
 
