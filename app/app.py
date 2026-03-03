@@ -71,41 +71,48 @@ def get_lti_config_path():
     base_path = os.path.dirname(os.path.abspath(__file__))
     config_path = os.path.join(base_path, 'config', 'config.json')
     
-    # NEW: Check if we are on Vercel/Serverless and need to inject the key
+    # Check if we are in a serverless env (missing private key on disk)
     private_key_path = os.path.join(base_path, 'config', 'private.key')
     
     if not os.path.exists(private_key_path):
-        # If the file is missing (like on Vercel), check the environment variable
         env_key = os.environ.get("LTI_PRIVATE_KEY")
         if env_key:
-            # We must use /tmp because /var/task is read-only on Vercel
-            tmp_key_path = os.path.join(tempfile.gettempdir(), 'private.key')
-            with open(tmp_key_path, 'w') as f:
+            # 1. Prepare /tmp paths
+            tmp_dir = tempfile.gettempdir()
+            tmp_priv_path = os.path.join(tmp_dir, 'private.key')
+            tmp_pub_path = os.path.join(tmp_dir, 'public.key')
+            
+            # 2. Write Private Key from Env
+            with open(tmp_priv_path, 'w') as f:
                 f.write(env_key)
             
-            # Now we have a problem: config.json points to 'config/private.key'
-            # We need to return a path to a config that points to our /tmp key
-            return create_ephemeral_config(config_path, tmp_key_path)
+            # 3. Copy Public Key from source to /tmp (since it exists in your repo)
+            src_pub_path = os.path.join(base_path, 'config', 'public.key')
+            if os.path.exists(src_pub_path):
+                import shutil
+                shutil.copy2(src_pub_path, tmp_pub_path)
+            
+            # 4. Generate the ephemeral config pointing to /tmp for BOTH keys
+            return create_ephemeral_config(config_path, tmp_priv_path, tmp_pub_path)
 
     return config_path
 
-def create_ephemeral_config(original_path, actual_key_path):
+def create_ephemeral_config(original_path, actual_priv_path, actual_pub_path):
     import json
     with open(original_path, 'r') as f:
         config_data = json.load(f)
     
-    # config_data is a dict where values are LISTS of configs
     for issuer in config_data:
         for config_entry in config_data[issuer]:
-            # Update the path in each config object within the list
-            config_entry["private_key_file"] = actual_key_path
+            config_entry["private_key_file"] = actual_priv_path
+            config_entry["public_key_file"] = actual_pub_path # Map the public key too
         
     tmp_config_path = os.path.join(tempfile.gettempdir(), 'config.json')
     with open(tmp_config_path, 'w') as f:
         json.dump(config_data, f)
         
     return tmp_config_path
-
+    
 def get_launch_data_storage():
     return FlaskCacheDataStorage(cache)
 
