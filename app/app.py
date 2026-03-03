@@ -1,18 +1,28 @@
 from linecache import cache
 from pprint import pprint
-from flask import Flask, jsonify, send_from_directory, render_template, Response, request, send_file
+from flask import Flask, jsonify, send_from_directory, render_template, Response, request, send_file, redirect
 from flask_caching import Cache
+# ... (imports)
 import io
 import zipfile
 import xml.etree.ElementTree as ET
 import xml.dom.minidom
 import re
 import os
+import requests
+import urllib.parse
 from tempfile import mkdtemp
+from dotenv import load_dotenv
 
 from pylti1p3.contrib.flask import FlaskOIDCLogin, FlaskMessageLaunch, FlaskRequest, FlaskCacheDataStorage
 from pylti1p3.registration import Registration
 from pylti1p3.tool_config import ToolConfJsonFile
+
+load_dotenv()
+CANVAS_DOMAIN = os.getenv('CANVAS_DOMAIN', 'http://canvas.docker:8081')
+CANVAS_CLIENT_ID = os.getenv('CANVAS_CLIENT_ID')
+CANVAS_CLIENT_SECRET = os.getenv('CANVAS_CLIENT_SECRET')
+CANVAS_OAUTH_REDIRECT_URI = os.getenv('CANVAS_OAUTH_REDIRECT_URI', 'http://localhost:5000/api/auth/callback')
 
 SESSION_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'flask_session')
 if not os.path.exists(SESSION_DIR):
@@ -30,14 +40,12 @@ config = {
     "SESSION_FILE_DIR": SESSION_DIR,
     "SESSION_COOKIE_NAME": "pylti1p3-flask-app-sessionid",
     "SESSION_COOKIE_HTTPONLY": True,
-    "SESSION_COOKIE_SECURE": True,   # should be True in case of HTTPS usage (production)
-    "SESSION_COOKIE_SAMESITE": 'None',  # should be 'None' in case of HTTPS usage (production)
+    "SESSION_COOKIE_SECURE": False,   # Set to False for local HTTP development
+    "SESSION_COOKIE_SAMESITE": 'Lax',  # Set to Lax for local HTTP development
     "DEBUG_TB_INTERCEPT_REDIRECTS": False
 }
 app.config.from_mapping(config)
 cache = Cache(app)
-
-
 
 # LTI ( In Development )
 
@@ -82,9 +90,7 @@ def login():
         target_link_uri = flask_request.get_param('redirect_uri')
 
     oidc_login = FlaskOIDCLogin(flask_request, tool_conf, launch_data_storage=launch_data_storage)
-    return oidc_login\
-        .enable_check_cookies()\
-        .redirect(target_link_uri)
+    return oidc_login.redirect(target_link_uri)
 
 
 @app.route('/launch/', methods=['POST'])
@@ -94,14 +100,138 @@ def launch():
     launch_data_storage = get_launch_data_storage()
 
     message_launch = FlaskMessageLaunch(request=flask_request, tool_config=tool_conf, launch_data_storage=launch_data_storage)
-    # message_launch_data = message_launch.get_launch_data()
+    launch_data = message_launch.get_launch_data()
+    
+    # DEBUG: Print launch data to identify the numeric Course ID key
+    print("--- LTI LAUNCH DATA ---")
+    import json
+    print(json.dumps(launch_data, indent=2))
+    print("-----------------------")
+    
+    # Extract Course ID
+    course_id = None
+    
+    # 1. Check for Canvas custom claim (Most reliable for numeric ID)
+    custom_params = launch_data.get('https://purl.imsglobal.org/spec/lti/claim/custom', {})
+    if custom_params.get('canvas_course_id'):
+        course_id = str(custom_params.get('canvas_course_id'))
+    
+    # 2. Fallback: Parse from Names and Roles service URL
+    if not course_id or not course_id.isdigit():
+        nrps_claim = launch_data.get('https://purl.imsglobal.org/spec/lti-nrps/claim/namesroleservice', {})
+        url = nrps_claim.get('context_memberships_url', '')
+        if '/courses/' in url:
+            course_id = url.split('/courses/')[1].split('/')[0]
+            
+    # 3. Last Resort: Standard context claim (often an opaque hash)
+    if not course_id:
+        context_claim = launch_data.get('https://purl.imsglobal.org/spec/lti/claim/context', {})
+        course_id = context_claim.get('id')
 
-    return render_template('index.html')
+    from flask import session, redirect
+    if course_id:
+        session['canvas_course_id'] = course_id
+        print(f"--- FINAL DETECTED COURSE ID: {course_id} ---")
+
+    # If no token in session, immediately redirect to Canvas OAuth before loading the app.
+    # Pass course_id as a URL param — don't rely on session surviving the cross-site POST redirect.
+    if 'canvas_api_token' not in session:
+        print("--- No canvas_api_token in session, redirecting to OAuth ---")
+        return redirect(f'/api/auth/canvas?course_id={course_id or ""}')
+
+    # Token exists — render the app and inject credentials into global JS variables
+    html = render_template('index.html', course_id=course_id, has_token=True)
+    
+    injections = []
+    if course_id:
+        injections.append(f'window.CANVAS_COURSE_ID = "{course_id}";')
+    injections.append(f'window.CANVAS_API_TOKEN = "{session.get("canvas_api_token")}";')
+    
+    script = f'<script>{" ".join(injections)}</script>'
+    html = html.replace('<head>', f'<head>{script}')
+    
+    return html
 
 @app.route('/jwks/', methods=['GET'])
 def get_jwks():
     tool_conf = ToolConfJsonFile(get_lti_config_path())
     return jsonify(tool_conf.get_jwks())
+
+# ---------------------------------------------
+# Canvas OAuth2 Endpoints
+# ---------------------------------------------
+@app.route('/api/auth/canvas', methods=['GET'])
+def auth_canvas():
+    scopes = ' '.join([
+        'url:POST|/api/v1/courses/:course_id/content_migrations',
+        'url:GET|/api/v1/progress/:id',
+        'url:POST|/api/v1/courses/:course_id/files'
+    ])
+    
+    from flask import session
+    # course_id comes from the redirect URL param (most reliable) or session as fallback
+    course_id = request.args.get('course_id') or session.get('canvas_course_id', '')
+    if course_id:
+        session['canvas_course_id'] = course_id  # Ensure it's in session
+    print(f"--- auth_canvas: course_id={course_id!r} ---")
+    auth_url = f"{CANVAS_DOMAIN}/login/oauth2/auth?" + urllib.parse.urlencode({
+        'client_id': CANVAS_CLIENT_ID,
+        'response_type': 'code',
+        'redirect_uri': CANVAS_OAUTH_REDIRECT_URI,
+        'scopes': scopes,
+        'state': course_id
+    })
+    
+    return redirect(auth_url)
+
+@app.route('/api/auth/callback', methods=['GET'])
+def auth_callback():
+    code = request.args.get('code')
+    error = request.args.get('error')
+    
+    if error:
+        return f"Authorization Error: {error}", 400
+        
+    if not code:
+        return "Missing authorization code", 400
+        
+    # Exchange code for token
+    token_url = f"{CANVAS_DOMAIN}/login/oauth2/token"
+    payload = {
+        'grant_type': 'authorization_code',
+        'client_id': CANVAS_CLIENT_ID,
+        'client_secret': CANVAS_CLIENT_SECRET,
+        'redirect_uri': CANVAS_OAUTH_REDIRECT_URI,
+        'code': code
+    }
+    
+    try:
+        req = requests.post(token_url, data=payload)
+        req.raise_for_status()
+        token_data = req.json()
+        
+        from flask import session
+        session['canvas_api_token'] = token_data.get('access_token')
+        
+        # Recover course_id from OAuth state param as a fallback if session didn't round-trip
+        course_id = session.get('canvas_course_id') or request.args.get('state') or ''
+        if course_id:
+            session['canvas_course_id'] = course_id  # Re-store in case it was lost
+
+        # Re-render the app with credentials injected
+        html = render_template('index.html', course_id=course_id, has_token=True)
+        
+        injections = []
+        if course_id:
+            injections.append(f'window.CANVAS_COURSE_ID = "{course_id}";')
+        injections.append(f'window.CANVAS_API_TOKEN = "{session.get("canvas_api_token")}";')
+        
+        script = f'<script>{" ".join(injections)}</script>'
+        html = html.replace('<head>', f'<head>{script}')
+        
+        return html
+    except Exception as e:
+        return f"Error exchanging token: {str(e)}", 500
 
 # Helpers
 
@@ -620,21 +750,104 @@ def download():
 
 @app.route('/api/canvas', methods=['POST'])
 def canvas():
+    from flask import session
+    data = request.json
+    
+    # Prioritize credentials from request body, then session
+    course_id = data.get('course_id') or session.get('canvas_course_id')
+    access_token = data.get('canvas_api_token') or session.get('canvas_api_token')
+
+    if not course_id:
+        return jsonify({"error": "Missing Canvas Course ID. Please refresh the tool launch."}), 400
+    if not access_token:
+        # 401 triggers the React frontend to initiate OAuth
+        return jsonify({"error": "Missing Canvas API Token, please authorize"}), 401
+
     data = request.json
     parsed_questions = parse_quiz_text(data.get("quiz_text", ""))
     qti_package = create_qti_1_2_package(parsed_questions)
-    course_id = data.get("course_id")
-    access_token = data.get("access_token")
 
-    # Create a zip file in memory
+    # 1. Create a zip file in memory
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
         zip_file.writestr("quiz.qti.xml", qti_package.encode("utf-8"))
-
+    
     zip_buffer.seek(0)
-    return Response(zip_buffer.read(), mimetype="application/zip", headers={
-        "Content-Disposition": "attachment; filename=quiz_package.zip"
-    })
+    zip_content = zip_buffer.read()
+    zip_size = len(zip_content)
+
+    headers = {
+        "Authorization": f"Bearer {access_token}"
+    }
+
+    try:
+        # STEP 1: Initiate Content Migration
+        mig_url = f"{CANVAS_DOMAIN}/api/v1/courses/{course_id}/content_migrations"
+        mig_payload = {
+            'migration_type': 'qti_converter',
+            'pre_attachment': {
+                'name': 'quiz_package.zip',
+                'size': zip_size,
+                'content_type': 'application/zip'
+            }
+        }
+        
+        mig_res = requests.post(mig_url, json=mig_payload, headers=headers)
+        mig_res.raise_for_status()
+        migration_data = mig_res.json()
+        
+        pre_auth = migration_data.get('pre_attachment', {})
+        upload_url = pre_auth.get('upload_url')
+        upload_params = pre_auth.get('upload_params', {})
+        progress_url = migration_data.get('progress_url')
+        
+        if not upload_url:
+            raise Exception("Failed to receive upload_url from Canvas")
+
+        # STEP 2: Upload File Data
+        files = {'file': ('quiz_package.zip', zip_content, 'application/zip')}
+        
+        # Requests will automatically follow the 3xx redirect to create_success, 
+        # which will throw a 401 due to our strict scopes. We expect this and ignore it.
+        try:
+            requests.post(upload_url, data=upload_params, files=files)
+        except requests.exceptions.RequestException as e:
+            if e.response is not None and e.response.status_code == 401:
+                # Expected behavior: The file already uploaded successfully before the redirect
+                pass
+            else:
+                raise e
+        
+        # Return the progress URL so the React frontend can poll it
+        return jsonify({
+            "message": "Upload initiated successfully", 
+            "progress_url": progress_url
+        })
+        
+    except requests.exceptions.HTTPError as e:
+        error_msg = e.response.text if hasattr(e.response, 'text') else str(e)
+        return jsonify({"error": f"Canvas API Error: {error_msg}"}), 500
+    except Exception as e:
+        return jsonify({"error": f"Internal Server Error: {str(e)}"}), 500
+
+
+@app.route('/api/proxy/progress', methods=['GET'])
+def proxy_progress():
+    # Helper endpoint for React to poll progress without dealing with CORS
+    # or exposing the token to the frontend
+    from flask import session
+    access_token = request.args.get('token') or session.get('canvas_api_token')
+    progress_url = request.args.get('url')
+    
+    if not access_token or not progress_url:
+        return jsonify({"error": "Missing token or url"}), 400
+        
+    try:
+        res = requests.get(progress_url, headers={"Authorization": f"Bearer {access_token}"})
+        res.raise_for_status()
+        return jsonify(res.json())
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": str(e)}), 500
 @app.route('/api/instructions')
 def download_instructions():
     return send_file(
