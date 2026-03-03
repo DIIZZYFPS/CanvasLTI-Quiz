@@ -158,6 +158,10 @@ def get_jwks():
     tool_conf = ToolConfJsonFile(get_lti_config_path())
     return jsonify(tool_conf.get_jwks())
 
+@app.route('/favicon.ico')
+def favicon():
+    return '', 204
+
 # ---------------------------------------------
 # Canvas OAuth2 Endpoints
 # ---------------------------------------------
