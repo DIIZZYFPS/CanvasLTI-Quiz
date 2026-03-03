@@ -65,8 +65,44 @@ class ExtendedFlaskMessageLaunch(FlaskMessageLaunch):
             return self
         return super().validate_nonce()
 
+import tempfile
+
 def get_lti_config_path():
-    return os.path.join(app.root_path, 'config', 'config.json')
+    base_path = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(base_path, 'config', 'config.json')
+    
+    # NEW: Check if we are on Vercel/Serverless and need to inject the key
+    private_key_path = os.path.join(base_path, 'config', 'private.key')
+    
+    if not os.path.exists(private_key_path):
+        # If the file is missing (like on Vercel), check the environment variable
+        env_key = os.environ.get("LTI_PRIVATE_KEY")
+        if env_key:
+            # We must use /tmp because /var/task is read-only on Vercel
+            tmp_key_path = os.path.join(tempfile.gettempdir(), 'private.key')
+            with open(tmp_key_path, 'w') as f:
+                f.write(env_key)
+            
+            # Now we have a problem: config.json points to 'config/private.key'
+            # We need to return a path to a config that points to our /tmp key
+            return create_ephemeral_config(config_path, tmp_key_path)
+
+    return config_path
+
+def create_ephemeral_config(original_path, actual_key_path):
+    import json
+    with open(original_path, 'r') as f:
+        config_data = json.load(f)
+    
+    # Update the path in the JSON object to point to the temp file
+    for iss in config_data:
+        config_data[iss]["private_key_file"] = actual_key_path
+        
+    tmp_config_path = os.path.join(tempfile.gettempdir(), 'config.json')
+    with open(tmp_config_path, 'w') as f:
+        json.dump(config_data, f)
+        
+    return tmp_config_path
 
 def get_launch_data_storage():
     return FlaskCacheDataStorage(cache)
