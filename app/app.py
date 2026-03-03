@@ -26,26 +26,27 @@ CANVAS_OAUTH_REDIRECT_URI = os.getenv('CANVAS_OAUTH_REDIRECT_URI', 'http://local
 
 SESSION_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'flask_session')
 if not os.path.exists(SESSION_DIR):
-    os.makedirs(SESSION_DIR)
+    os.makedirs(SESSION_DIR, exist_ok=True)
 
 app = Flask(__name__, static_folder="assets", template_folder="templates")
 
 config = {
     "DEBUG": False,
     "ENV": "production",
-    "CACHE_TYPE": "simple",
+    "CACHE_TYPE": "SimpleCache",
     "CACHE_DEFAULT_TIMEOUT": 600,
-    "SECRET_KEY": "replace-me",
+    "SECRET_KEY": os.getenv("SECRET_KEY", "replace-me-in-production"),
     "SESSION_TYPE": "filesystem",
     "SESSION_FILE_DIR": SESSION_DIR,
     "SESSION_COOKIE_NAME": "pylti1p3-flask-app-sessionid",
     "SESSION_COOKIE_HTTPONLY": True,
-    "SESSION_COOKIE_SECURE": False,   # Set to False for local HTTP development
-    "SESSION_COOKIE_SAMESITE": 'Lax',  # Set to Lax for local HTTP development
+    "SESSION_COOKIE_SECURE": True,    # Must be True on Railway (HTTPS)
+    "SESSION_COOKIE_SAMESITE": 'None', # Must be None for cross-site LTI iframes
     "DEBUG_TB_INTERCEPT_REDIRECTS": False
 }
 app.config.from_mapping(config)
 cache = Cache(app)
+
 
 # LTI ( In Development )
 

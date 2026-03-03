@@ -2,7 +2,7 @@
 flask
 flask_caching
 gunicorn
-dotenv
+python-dotenv
 
 # LTI Libraries
 pylti1p3
