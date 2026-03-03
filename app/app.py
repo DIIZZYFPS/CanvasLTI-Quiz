@@ -94,9 +94,11 @@ def create_ephemeral_config(original_path, actual_key_path):
     with open(original_path, 'r') as f:
         config_data = json.load(f)
     
-    # Update the path in the JSON object to point to the temp file
-    for iss in config_data:
-        config_data[iss]["private_key_file"] = actual_key_path
+    # config_data is a dict where values are LISTS of configs
+    for issuer in config_data:
+        for config_entry in config_data[issuer]:
+            # Update the path in each config object within the list
+            config_entry["private_key_file"] = actual_key_path
         
     tmp_config_path = os.path.join(tempfile.gettempdir(), 'config.json')
     with open(tmp_config_path, 'w') as f:
