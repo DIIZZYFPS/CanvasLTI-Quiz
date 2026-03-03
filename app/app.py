@@ -24,7 +24,7 @@ CANVAS_CLIENT_ID = os.getenv('CANVAS_CLIENT_ID')
 CANVAS_CLIENT_SECRET = os.getenv('CANVAS_CLIENT_SECRET')
 CANVAS_OAUTH_REDIRECT_URI = os.getenv('CANVAS_OAUTH_REDIRECT_URI', 'http://localhost:5000/api/auth/callback')
 
-SESSION_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'flask_session')
+SESSION_DIR = os.getenv('SESSION_FILE_DIR', '/tmp/flask_session')
 if not os.path.exists(SESSION_DIR):
     os.makedirs(SESSION_DIR, exist_ok=True)
 
