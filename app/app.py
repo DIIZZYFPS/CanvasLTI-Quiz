@@ -19,10 +19,10 @@ from pylti1p3.registration import Registration
 from pylti1p3.tool_config import ToolConfJsonFile
 
 load_dotenv()
-CANVAS_DOMAIN = os.getenv('CANVAS_DOMAIN', 'http://canvas.docker:8081')
-CANVAS_CLIENT_ID = os.getenv('CANVAS_CLIENT_ID')
-CANVAS_CLIENT_SECRET = os.getenv('CANVAS_CLIENT_SECRET')
-CANVAS_OAUTH_REDIRECT_URI = os.getenv('CANVAS_OAUTH_REDIRECT_URI', 'http://localhost:5000/api/auth/callback')
+CANVAS_DOMAIN = os.getenv('CANVAS_DOMAIN')
+API_CLIENT_ID = os.getenv('CANVAS_API_CLIENT_ID')
+API_CLIENT_SECRET = os.getenv('CANVAS_API_CLIENT_SECRET')
+API_REDIRECT_URI = os.getenv('CANVAS_OAUTH_REDIRECT_URI')
 
 SESSION_DIR = os.getenv('SESSION_FILE_DIR', '/tmp/flask_session')
 if not os.path.exists(SESSION_DIR):
@@ -158,6 +158,7 @@ def login():
 
 @app.route('/launch/', methods=['POST'])
 def launch():
+    from flask import session
     tool_conf = ToolConfJsonFile(get_lti_config_path())
     flask_request = FlaskRequest()
     launch_data_storage = get_launch_data_storage()
@@ -165,55 +166,19 @@ def launch():
     message_launch = FlaskMessageLaunch(request=flask_request, tool_config=tool_conf, launch_data_storage=launch_data_storage)
     launch_data = message_launch.get_launch_data()
     
-    # DEBUG: Print launch data to identify the numeric Course ID key
-    print("--- LTI LAUNCH DATA ---")
-    import json
-    print(json.dumps(launch_data, indent=2))
-    print("-----------------------")
-    
-    # Extract Course ID
-    course_id = None
-    
-    # 1. Check for Canvas custom claim (Most reliable for numeric ID)
+    # 1. Capture the Course ID from the LTI Launch Claim
     custom_params = launch_data.get('https://purl.imsglobal.org/spec/lti/claim/custom', {})
-    if custom_params.get('canvas_course_id'):
-        course_id = str(custom_params.get('canvas_course_id'))
+    course_id = str(custom_params.get('canvas_course_id', ''))
     
-    # 2. Fallback: Parse from Names and Roles service URL
-    if not course_id or not course_id.isdigit():
-        nrps_claim = launch_data.get('https://purl.imsglobal.org/spec/lti-nrps/claim/namesroleservice', {})
-        url = nrps_claim.get('context_memberships_url', '')
-        if '/courses/' in url:
-            course_id = url.split('/courses/')[1].split('/')[0]
-            
-    # 3. Last Resort: Standard context claim (often an opaque hash)
-    if not course_id:
-        context_claim = launch_data.get('https://purl.imsglobal.org/spec/lti/claim/context', {})
-        course_id = context_claim.get('id')
-
-    from flask import session, redirect
-    if course_id:
-        session['canvas_course_id'] = course_id
-        print(f"--- FINAL DETECTED COURSE ID: {course_id} ---")
-
-    # If no token in session, immediately redirect to Canvas OAuth before loading the app.
-    # Pass course_id as a URL param — don't rely on session surviving the cross-site POST redirect.
+    # 2. Persist state in session
+    session['canvas_course_id'] = course_id
+    
+    # 3. Check for API Token; if missing, start the SECOND OAuth2 flow (API Key)
     if 'canvas_api_token' not in session:
-        print("--- No canvas_api_token in session, redirecting to OAuth ---")
-        return redirect(f'/api/auth/canvas?course_id={course_id or ""}')
+        return redirect('/api/auth/canvas')
 
-    # Token exists — render the app and inject credentials into global JS variables
-    html = render_template('index.html', course_id=course_id, has_token=True)
-    
-    injections = []
-    if course_id:
-        injections.append(f'window.CANVAS_COURSE_ID = "{course_id}";')
-    injections.append(f'window.CANVAS_API_TOKEN = "{session.get("canvas_api_token")}";')
-    
-    script = f'<script>{" ".join(injections)}</script>'
-    html = html.replace('<head>', f'<head>{script}')
-    
-    return html
+    # Token already exists — inject credentials as JS globals and render
+    return _render_with_globals('index.html', course_id, session.get('canvas_api_token'))
 
 @app.route('/jwks/', methods=['GET'])
 def get_jwks():
@@ -229,77 +194,72 @@ def favicon():
 # ---------------------------------------------
 @app.route('/api/auth/canvas', methods=['GET'])
 def auth_canvas():
-    scopes = ' '.join([
+    # These are the REST scopes that the LTI Key cannot have
+    scopes = [
         'url:POST|/api/v1/courses/:course_id/content_migrations',
         'url:GET|/api/v1/progress/:id',
         'url:POST|/api/v1/courses/:course_id/files'
-    ])
+    ]
     
-    from flask import session
-    # course_id comes from the redirect URL param (most reliable) or session as fallback
-    course_id = request.args.get('course_id') or session.get('canvas_course_id', '')
-    if course_id:
-        session['canvas_course_id'] = course_id  # Ensure it's in session
-    print(f"--- auth_canvas: course_id={course_id!r} ---")
-    auth_url = f"{CANVAS_DOMAIN}/login/oauth2/auth?" + urllib.parse.urlencode({
-        'client_id': CANVAS_CLIENT_ID,
+    # Build the OAuth2 URL specifically using the API_CLIENT_ID
+    params = {
+        'client_id': API_CLIENT_ID,
         'response_type': 'code',
-        'redirect_uri': CANVAS_OAUTH_REDIRECT_URI,
-        'scopes': scopes,
-        'state': course_id
-    })
+        'redirect_uri': API_REDIRECT_URI,
+        'scope': ' '.join(scopes),
+        'state': session.get('canvas_course_id', '') # Pass course_id as state for round-trip
+    }
     
+    auth_url = f"{CANVAS_DOMAIN}/login/oauth2/auth?{urllib.parse.urlencode(params)}"
     return redirect(auth_url)
 
 @app.route('/api/auth/callback', methods=['GET'])
 def auth_callback():
+    from flask import session
     code = request.args.get('code')
-    error = request.args.get('error')
+    # Recover course_id from OAuth state param — session may not have survived the round-trip
+    course_id = request.args.get('state') or session.get('canvas_course_id', '')
     
-    if error:
-        return f"Authorization Error: {error}", 400
-        
     if not code:
         return "Missing authorization code", 400
-        
-    # Exchange code for token
-    token_url = f"{CANVAS_DOMAIN}/login/oauth2/token"
+
+    # Exchange code for a token using the API_CLIENT_SECRET
     payload = {
         'grant_type': 'authorization_code',
-        'client_id': CANVAS_CLIENT_ID,
-        'client_secret': CANVAS_CLIENT_SECRET,
-        'redirect_uri': CANVAS_OAUTH_REDIRECT_URI,
+        'client_id': API_CLIENT_ID,
+        'client_secret': API_CLIENT_SECRET,
+        'redirect_uri': API_REDIRECT_URI,
         'code': code
     }
     
-    try:
-        req = requests.post(token_url, data=payload)
-        req.raise_for_status()
-        token_data = req.json()
-        
-        from flask import session
-        session['canvas_api_token'] = token_data.get('access_token')
-        
-        # Recover course_id from OAuth state param as a fallback if session didn't round-trip
-        course_id = session.get('canvas_course_id') or request.args.get('state') or ''
-        if course_id:
-            session['canvas_course_id'] = course_id  # Re-store in case it was lost
+    response = requests.post(f"{CANVAS_DOMAIN}/login/oauth2/token", data=payload)
+    token_data = response.json()
+    
+    if 'access_token' in token_data:
+        session['canvas_api_token'] = token_data['access_token']
+        session['canvas_course_id'] = course_id  # Re-store in case session didn't round-trip
+        return redirect(f'/launch_success?course_id={course_id}')
+    
+    return jsonify({"error": "Failed to obtain API token", "details": token_data}), 400
 
-        # Re-render the app with credentials injected
-        html = render_template('index.html', course_id=course_id, has_token=True)
-        
-        injections = []
-        if course_id:
-            injections.append(f'window.CANVAS_COURSE_ID = "{course_id}";')
-        injections.append(f'window.CANVAS_API_TOKEN = "{session.get("canvas_api_token")}";')
-        
+@app.route('/launch_success')
+def launch_success():
+    from flask import session
+    course_id = request.args.get('course_id') or session.get('canvas_course_id', '')
+    return _render_with_globals('index.html', course_id, session.get('canvas_api_token'))
+
+def _render_with_globals(template, course_id, api_token):
+    """Renders a template and injects CANVAS_COURSE_ID and CANVAS_API_TOKEN as window globals."""
+    html = render_template(template, course_id=course_id, has_token=bool(api_token))
+    injections = []
+    if course_id:
+        injections.append(f'window.CANVAS_COURSE_ID = "{course_id}";')
+    if api_token:
+        injections.append(f'window.CANVAS_API_TOKEN = "{api_token}";')
+    if injections:
         script = f'<script>{" ".join(injections)}</script>'
         html = html.replace('<head>', f'<head>{script}')
-        
-        return html
-    except Exception as e:
-        return f"Error exchanging token: {str(e)}", 500
-
+    return html
 # Helpers
 
 def extract_points(text, default="1"):
