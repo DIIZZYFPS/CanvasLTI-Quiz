@@ -30,7 +30,7 @@
     ],
     "https://canvas.beta.instructure.com": [
         {
-            "client_id": "115900000000000280",
+            "client_id": "115900000000000282",
             "auth_login_url": "https://canvas.beta.instructure.com/api/lti/authorize_redirect",
             "auth_token_url": "https://canvas.beta.instructure.com/login/oauth2/token",
             "key_set_url": "https://canvas.beta.instructure.com/api/lti/security/jwks",
@@ -38,7 +38,7 @@
             "private_key_file": "private.key",
             "public_key_file": "public.key",
             "deployment_ids": [
-                "15087:d5c06b5e5eaf59640d07356a48db053a7c1e6b81"
+                "15636:d5c06b5e5eaf59640d07356a48db053a7c1e6b81"
             ]
         }
     ]
