@@ -23,7 +23,6 @@ const Dashboard = () => {
   const [quizTitle, setQuizTitle] = useState("");
   const [showPreview, setShowPreview] = useState(false);
   const [previewData, setPreviewData] = useState<any[]>([]);
-  const [exportType, setExportType] = useState<'qti' | 'canvas'>('qti');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const { theme, setTheme } = useTheme();
@@ -82,13 +81,13 @@ const Dashboard = () => {
   };
 
   const handleFinalExport = (type: 'qti' | 'canvas') => {
-    setExportType(type);
+
     setShowPreview(false);
-    console.log(`Exporting ${previewData.length} questions as ${exportType}`);
+    console.log(`Exporting ${previewData.length} questions as ${type}`);
 
     (async () => {
       try {
-        if (exportType === 'qti') {
+        if (type === 'qti') {
           let response;
           if (selectedFile) {
             const formData = new FormData();
@@ -108,7 +107,7 @@ const Dashboard = () => {
           document.body.removeChild(a);
           toast.success("QTI Package Downloaded!");
 
-        } else if (exportType === 'canvas') {
+        } else if (type === 'canvas') {
           setConversionStatus('processing');
           setProgress(10);
 
