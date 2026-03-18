@@ -823,6 +823,12 @@ def canvas():
         }
         
         mig_res = requests.post(mig_url, json=mig_payload, headers=headers)
+        
+        # If Canvas says the token is invalid/expired, clear it and ask for re-auth
+        if mig_res.status_code == 401:
+            session.pop('canvas_api_token', None)
+            return jsonify({"error": "Canvas token expired. Please close and relaunch the tool."}), 401
+        
         mig_res.raise_for_status()
         migration_data = mig_res.json()
         
