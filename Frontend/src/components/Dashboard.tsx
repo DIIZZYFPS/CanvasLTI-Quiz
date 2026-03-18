@@ -14,17 +14,20 @@ import api from "@/api";
 import { FileUpload } from "./FileUpload";
 import { toast } from "sonner";
 import { useTheme } from "./ui/theme-provider";
+import { Input } from "./ui/input";
 
 const Dashboard = () => {
   const [conversionStatus, setConversionStatus] = useState<'idle' | 'processing' | 'complete' | 'error'>('idle');
   const [progress, setProgress] = useState(0);
   const [quizContent, setQuizContent] = useState("");
+  const [quizTitle, setQuizTitle] = useState("");
   const [showPreview, setShowPreview] = useState(false);
   const [previewData, setPreviewData] = useState<any[]>([]);
   const [exportType, setExportType] = useState<'qti' | 'canvas'>('qti');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const { theme, setTheme } = useTheme();
+  const inCanvas = (window as any).CANVAS_COURSE_ID;
 
   const errorCount = previewData.filter((q) => q.type === 'error').length;
 
@@ -49,8 +52,7 @@ const Dashboard = () => {
     return response?.data?.questions ?? [];
   };
 
-  const handleConvert = async (type: 'qti' | 'canvas') => {
-    setExportType(type);
+  const handleConvert = async () => {
     setConversionStatus('processing');
     setProgress(0);
 
@@ -69,6 +71,7 @@ const Dashboard = () => {
           (async () => {
             const parsed = await parseQuestions(quizContent ? quizContent : null, selectedFile ? selectedFile : null);
             setPreviewData(parsed);
+            toast.success("Questions parsed successfully!");
             setShowPreview(true);
           })();
           return 100;
@@ -78,7 +81,8 @@ const Dashboard = () => {
     }, 200);
   };
 
-  const handleFinalExport = () => {
+  const handleFinalExport = (type: 'qti' | 'canvas') => {
+    setExportType(type);
     setShowPreview(false);
     console.log(`Exporting ${previewData.length} questions as ${exportType}`);
 
@@ -88,16 +92,17 @@ const Dashboard = () => {
           let response;
           if (selectedFile) {
             const formData = new FormData();
+            formData.append('quiz_title', quizTitle);
             formData.append('file', selectedFile);
             response = await api.post('/download', formData, { responseType: 'blob' });
           } else if (quizContent) {
-            response = await api.post('/download', { quiz_text: quizContent }, { responseType: 'blob' });
+            response = await api.post('/download', { quiz_title: quizTitle, quiz_text: quizContent }, { responseType: 'blob' });
           }
           const blob = new Blob([response?.data], { type: 'application/zip' });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = 'quiz_package.zip';
+          a.download = `${quizTitle}.zip`;
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
@@ -123,6 +128,7 @@ const Dashboard = () => {
               return;
             } else if (quizContent) {
               response = await api.post('/canvas', {
+                quiz_title: quizTitle,
                 quiz_text: quizContent,
                 course_id: courseId,
                 canvas_api_token: apiToken
@@ -266,21 +272,19 @@ const Dashboard = () => {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Input
+                    id="quiz-title"
+                    placeholder="Quiz Title"
+                    value={quizTitle}
+                    onChange={(e) => setQuizTitle(e.target.value)}
+                  />
                   <Button
-                    onClick={() => handleConvert('qti')}
+                    onClick={() => handleConvert()}
                     disabled={(!quizContent.trim() && !selectedFile) || conversionStatus === 'processing'}
                     variant="outline"
                     className="bg-gradient-primary hover:shadow-glow transition-all duration-300 col-span-1 md:col-span-2"
                   >
-                    Preview and Export to QTI ZIP
-                  </Button>
-                  <Button
-                    onClick={() => handleConvert('canvas')}
-                    disabled={(!quizContent.trim() && !selectedFile) || conversionStatus === 'processing'}
-                    variant="outline"
-                    className="border-primary text-primary hover:bg-primary hover:text-primary-foreground"
-                  >
-                    Export to Canvas Quiz
+                    Check Syntax and Preview
                   </Button>
                 </div>
               </CardContent>
@@ -445,10 +449,10 @@ const Dashboard = () => {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Eye className="w-5 h-5" />
-              Preview Questions ({previewData.length} questions{errorCount > 0 && <span className="text-destructive">, {errorCount} errors</span>})
+              Preview {quizTitle ? quizTitle : "Quiz"} ( {previewData.length} question{previewData.length > 1 ? "s" : ""}{errorCount > 0 && <span className="text-destructive">, {errorCount} error{errorCount > 1 ? "s" : ""}</span>})
             </DialogTitle>
             <DialogDescription>
-              Review your converted questions before exporting to {exportType.toUpperCase()}
+              Review your converted questions before exporting to preferred platform.
             </DialogDescription>
           </DialogHeader>
 
@@ -522,12 +526,19 @@ const Dashboard = () => {
               Cancel
             </Button>
             <Button
-              onClick={handleFinalExport}
+              onClick={() => handleFinalExport('qti')}
               className="bg-gradient-primary hover:shadow-glow flex items-center gap-2"
             >
               <Download className="w-4 h-4" />
-              Export {exportType.toUpperCase()}
+              Export QTI
             </Button>
+            {inCanvas && <Button
+              onClick={() => handleFinalExport('canvas')}
+              className="bg-gradient-primary hover:shadow-glow flex items-center gap-2"
+            >
+              <Download className="w-4 h-4" />
+              Export Canvas
+            </Button>}
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -686,7 +686,7 @@ def _create_short_answer_item(section, question):
         ET.SubElement(conditionvar, 'varequal', {'respident': 'response1'}).text = answer['text']
     ET.SubElement(respcondition, 'setvar', {'action': 'Set', 'varname': 'SCORE'}).text = '100'
 
-def create_qti_1_2_package(parsed_data, quiz_title="My Uploaded Quiz"):
+def create_qti_1_2_package(quiz_title, parsed_data):
     """
     Acts as a router, calling the correct XML generation function
     based on the question type.
@@ -753,6 +753,7 @@ def preview():
 @app.route("/api/download", methods=['POST'])
 def download():
     if request.content_type.startswith("multipart/form-data"):
+        title = request.form.get("quiz_title", "quiz")
         file = request.files.get("file")
         if file:
             content = read_file(file)
@@ -762,8 +763,9 @@ def download():
             return {"error": "No file provided"}, 400
     else:
         data = request.get_json()
+        title = data.get("quiz_title", "quiz")
         parsed_questions = parse_quiz_text(data.get("quiz_text", ""))
-    qti_package = create_qti_1_2_package(parsed_questions)
+    qti_package = create_qti_1_2_package(title, parsed_questions)
 
     # Create a zip file in memory
     zip_buffer = io.BytesIO()
@@ -791,8 +793,9 @@ def canvas():
         return jsonify({"error": "Missing Canvas API Token, please authorize"}), 401
 
     data = request.json
+    title = data.get("quiz_title", "quiz")
     parsed_questions = parse_quiz_text(data.get("quiz_text", ""))
-    qti_package = create_qti_1_2_package(parsed_questions)
+    qti_package = create_qti_1_2_package(title, parsed_questions)
 
     # 1. Create a zip file in memory
     zip_buffer = io.BytesIO()
@@ -813,7 +816,7 @@ def canvas():
         mig_payload = {
             'migration_type': 'qti_converter',
             'pre_attachment': {
-                'name': 'quiz_package.zip',
+                'name': f'{title}.zip',
                 'size': zip_size,
                 'content_type': 'application/zip'
             }
@@ -832,7 +835,7 @@ def canvas():
             raise Exception("Failed to receive upload_url from Canvas")
 
         # STEP 2: Upload File Data
-        files = {'file': ('quiz_package.zip', zip_content, 'application/zip')}
+        files = {'file': (f'{title}.zip', zip_content, 'application/zip')}
         
         # Requests will automatically follow the 3xx redirect to create_success, 
         # which will throw a 401 due to our strict scopes. We expect this and ignore it.
