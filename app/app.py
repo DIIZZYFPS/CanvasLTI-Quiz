@@ -44,7 +44,7 @@ config = {
     "SESSION_COOKIE_SECURE": True,    # Must be True on Railway (HTTPS)
     "SESSION_COOKIE_SAMESITE": 'None', # Must be None for cross-site LTI iframes
     "DEBUG_TB_INTERCEPT_REDIRECTS": False,
-    "PERMANENT_SESSION_LIFETIME": timedelta(seconds=10)
+    "PERMANENT_SESSION_LIFETIME": timedelta(hours=3)
 }
 app.config.from_mapping(config)
 cache = Cache(app)
