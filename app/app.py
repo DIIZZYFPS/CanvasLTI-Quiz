@@ -12,6 +12,7 @@ import os
 import requests
 import urllib.parse
 from tempfile import mkdtemp
+from datetime import timedelta
 from dotenv import load_dotenv
 
 from pylti1p3.contrib.flask import FlaskOIDCLogin, FlaskMessageLaunch, FlaskRequest, FlaskCacheDataStorage
@@ -42,7 +43,8 @@ config = {
     "SESSION_COOKIE_HTTPONLY": True,
     "SESSION_COOKIE_SECURE": True,    # Must be True on Railway (HTTPS)
     "SESSION_COOKIE_SAMESITE": 'None', # Must be None for cross-site LTI iframes
-    "DEBUG_TB_INTERCEPT_REDIRECTS": False
+    "DEBUG_TB_INTERCEPT_REDIRECTS": False,
+    "PERMANENT_SESSION_LIFETIME": timedelta(seconds=10)
 }
 app.config.from_mapping(config)
 cache = Cache(app)
@@ -236,6 +238,7 @@ def auth_callback():
     token_data = response.json()
     
     if 'access_token' in token_data:
+        session.permanent = True
         session['canvas_api_token'] = token_data['access_token']
         session['canvas_course_id'] = course_id  # Re-store in case session didn't round-trip
         return redirect(f'/launch_success?course_id={course_id}')
