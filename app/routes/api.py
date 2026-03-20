@@ -157,8 +157,10 @@ def proxy_progress():
 
 @api_bp.route('/instructions')
 def download_instructions():
+    # Use absolute path relative to this file
+    file_path = os.path.join(os.path.dirname(__file__), '..', 'public', 'Instructions.txt')
     return send_file(
-        "public/Instructions.txt",
+        file_path,
         as_attachment=True,
         download_name="Quiz Reformatting Instructions.txt",
     )

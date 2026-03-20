@@ -1,45 +1,54 @@
 import re
 from .text_utils import extract_points, _clean_points_text
-from .respondus_parser import detect_respondus_format, parse_respondus_mcq, parse_respondus_tf, parse_respondus_essay
+from .respondus_parser import (
+    detect_respondus_format, 
+    parse_respondus_mcq, 
+    parse_respondus_tf, 
+    parse_respondus_essay,
+    parse_respondus_fib,
+    parse_respondus_fmb,
+    parse_respondus_mr
+)
 
 # --- Core Branch Parsers ---
 
 def _parse_multiple_choice(lines, index):
-    """Parses a multiple-choice question with diagnostic error messages."""
+    """Parses a multiple-choice or multiple-answers question."""
     full_text = " ".join(lines)
     points = extract_points(full_text)
     
-    # 1. Extract Answer
-    answer_match = re.search(r'Answer:\s*([A-Z])', full_text, re.IGNORECASE)
-    if not answer_match:
-        return {
-            "id": f"error_{index}",
-            "type": "error",
-            "question_text": full_text,
-            "error": "Missing or Invalid Answer. Ensure the question ends with 'Answer: [Letter]' (e.g., 'Answer: B')."
-        }
-    correct_char = answer_match.group(1).upper()
+    # 1. Extract Answer(s) via "Answer:" or "Answers:" tag
+    # Support "Answer: A" or "Answers: A, B"
+    answer_match = re.search(r'Answers?:\s*([A-Z, ]+)', full_text, re.IGNORECASE)
+    correct_chars = []
+    if answer_match:
+        # Split by comma or space and clean up
+        raw_ans = answer_match.group(1).upper()
+        correct_chars = [c.strip() for c in re.split(r'[, ]+', raw_ans) if c.strip()]
 
-    # 2. Extract Options
+    # 2. Extract Options (Detect multiple * markers for parity with Respondus)
     options = []
-    # Identify lines starting with "A)", "B.", etc.
+    starred_chars = []
     for line in lines:
-        match = re.match(r'^([A-Z])[\)\.]\s*(.*)', line.strip())
+        match = re.match(r'^(\*?)([A-Z])[\)\.]\s*(.*)', line.strip(), re.IGNORECASE)
         if match:
-            options.append({"id": match.group(1).upper(), "text": match.group(2).strip()})
+            is_starred = bool(match.group(1))
+            char = match.group(2).upper()
+            text = match.group(3).strip()
+            options.append({"id": char, "text": text})
+            if is_starred:
+                starred_chars.append(char)
+    
+    # Consolidate correct characters from both "Answers:" tag and "*" markers
+    final_correct_chars = list(set(correct_chars + starred_chars))
     
     if len(options) < 2:
-        return {
-            "id": f"error_{index}", 
-            "type": "error", 
-            "question_text": full_text, 
-            "error": "Insufficient options found. List at least two options starting with 'A)', 'B)', etc."
-        }
+        return {"id": f"error_{index}", "type": "error", "question_text": full_text, "error": "Insufficient options found. List at least two options starting with 'A)', 'B)', etc."}
 
-    # 3. Extract Question Text (everything before the first option)
+    # Identify question text (before first option)
     question_lines = []
     for line in lines:
-        if re.match(r'^[A-Z][\)\.]', line.strip()):
+        if re.match(r'^\*?[A-Z][\)\.]', line.strip(), re.IGNORECASE):
             break
         question_lines.append(line)
     
@@ -47,35 +56,39 @@ def _parse_multiple_choice(lines, index):
     question_text = _clean_points_text(question_text)
 
     if not question_text:
-        return {"id": f"error_{index}", "type": "error", "question_text": full_text, "error": "Question text is missing. The question prompt must appear before the options."}
+        return {"id": f"error_{index}", "type": "error", "question_text": full_text, "error": "Question text is missing."}
 
-    # 4. Validate Answer matches an Option
-    correct_answer_id = None
+    # Map to internal answer IDs
     answers = []
-    
+    correct_answer_ids = []
     for i, opt in enumerate(options):
         ans_id = f"q{index}_ans{i}"
         answers.append({"id": ans_id, "text": opt['text']})
-        if opt['id'] == correct_char:
-            correct_answer_id = ans_id
+        if opt['id'] in final_correct_chars:
+            correct_answer_ids.append(ans_id)
             
-    if not correct_answer_id:
-        valid_options = ", ".join([o['id'] for o in options])
-        return {
-            "id": f"error_{index}", 
-            "type": "error", 
-            "question_text": question_text, 
-            "error": f"The answer '{correct_char}' does not match any of the provided options ({valid_options})."
-        }
+    if not correct_answer_ids:
+        return {"id": f"error_{index}", "type": "error", "question_text": question_text, "error": "No correct answer specified. Use 'Answer: A' or mark choices with '*'."}
 
-    return {
-        "id": f"q{index}", 
-        "type": "multiple_choice_question", 
-        "question_text": question_text,
-        "answers": answers, 
-        "correct_answer_id": correct_answer_id, 
-        "points": points
-    }
+    # Decide type based on number of correct answers
+    if len(correct_answer_ids) > 1:
+        return {
+            "id": f"q{index}", 
+            "type": "multiple_answers_question", 
+            "question_text": question_text,
+            "answers": answers, 
+            "correct_answer_ids": correct_answer_ids,
+            "points": points
+        }
+    else:
+        return {
+            "id": f"q{index}", 
+            "type": "multiple_choice_question", 
+            "question_text": question_text,
+            "answers": answers, 
+            "correct_answer_id": correct_answer_ids[0],
+            "points": points
+        }
 
 def _parse_true_false(lines, index):
     """Parses a true/false question with diagnostic error messages."""
@@ -189,7 +202,7 @@ def _parse_fill_in_the_blank(line, index):
 
     return {
         "id": f"q{index}", 
-        "type": "fill_in_the_blank_question", 
+        "type": "short_answer_question", 
         "question_text": question_text,
         "answers": [{"id": f"q{index}_ans0", "text": correct_answer}], 
         "points": points
@@ -220,6 +233,55 @@ def _parse_essay(line, index):
         "points": points
     }
 
+def _parse_core_fmb(line, index):
+    """
+    Parses a Core-style Fill-in-Multiple-Blanks.
+    Syntax: The [a] is [b]. a: red, b: blue
+    """
+    points = extract_points(line)
+    
+    # Split question from answers
+    # Use a separator like ":" or "Answers:"
+    parts = re.split(r'Answers?:', line, flags=re.IGNORECASE)
+    if len(parts) < 2:
+        # Try finding key: value pairs directly
+        question_text = line
+        kv_pairs = []
+    else:
+        question_text = parts[0].strip()
+        kv_pairs = [p.strip() for p in parts[1].split(',') if p.strip()]
+
+    question_text = _clean_points_text(question_text)
+    
+    # Extract variables
+    variables = re.findall(r'\[([^\]]+)\]', question_text)
+    if not variables:
+        return None # Not an FMB
+
+    answer_map = {}
+    if len(parts) >= 2:
+        # User provided an "Answers:" line, use it for mapping
+        for pair in kv_pairs:
+            if ':' in pair:
+                key, val = pair.split(':', 1)
+                answer_map[key.strip().lower()] = [val.strip()]
+    else:
+        # AUTO-BLANK: Use the words inside the brackets as the answers
+        for var in variables:
+            answer_map[var.lower()] = [var]
+    
+    # Build answers
+    answers = {}
+    for var in variables:
+        answers[var] = answer_map.get(var.lower(), [])
+
+    return {
+        "id": f"q{index}",
+        "type": "fill_in_multiple_blanks_question",
+        "question_text": question_text,
+        "variables": answers,
+        "points": points
+    }
 
 def parse_quiz_text(text_input):
     """
@@ -263,6 +325,12 @@ def parse_quiz_text(text_input):
                 question_data = parse_respondus_tf(clean_lines, i, points)
             elif r_type in ["E", "ESSAY"]:
                 question_data = parse_respondus_essay(clean_lines, i, points)
+            elif r_type == "F":
+                question_data = parse_respondus_fib(clean_lines, i, points)
+            elif r_type == "FMB":
+                question_data = parse_respondus_fmb(clean_lines, i, points)
+            elif r_type == "MR":
+                question_data = parse_respondus_mr(clean_lines, i, points)
             else:
                 question_data = {"id": f"error_{i}", "type": "error", "question_text": block, "error": f"Unsupported Respondus type: {r_type}"}
         else:
@@ -277,7 +345,11 @@ def parse_quiz_text(text_input):
                 full_block_text = " ".join(lines)
                 full_lower = full_block_text.lower()
             
-            if full_lower.startswith("tf:") or full_lower.startswith("true/false:"):
+            # Check for Multiple Blanks first (Core)
+            fmb_data = _parse_core_fmb(full_block_text, i)
+            if fmb_data:
+                question_data = fmb_data
+            elif full_lower.startswith("tf:") or full_lower.startswith("true/false:"):
                 question_data = _parse_true_false(lines, i)
             elif full_lower.startswith("sa:") or "[short answer]" in full_lower:
                 question_data = _parse_short_answer(full_block_text, i)

@@ -304,9 +304,12 @@ const Dashboard = () => {
                       {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
                     </CardTitle>
                     <CardDescription>
-                      Format your questions according to these guidelines for automatic type detection
+                      Follow these guidelines for automatic type detection. 
+                      <div className="mt-2 p-2 bg-amber-500/10 border border-amber-500/20 rounded-md text-amber-600 dark:text-amber-400 font-medium text-xs">
+                        ⚠️ IMPORTANT: You must leave at least one blank line between each question block.
+                      </div>
                       <Separator className="my-2" />
-                      Use the button below to download a detailed guide. Pair it with your preferred AI tool to format large sets of questions quickly.
+                      Our parser also natively supports the standard <b>Respondus Legacy Format</b> (Type: MC, MR, F, etc.).
                     </CardDescription>
                     <CardFooter>
                       <Button
@@ -315,26 +318,39 @@ const Dashboard = () => {
                         asChild
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <a href="/api/instructions" download>Download Full Formatting Guide</a>
+                        <a href="/api/instructions" download>Download Detailed PDF Guide</a>
                       </Button>
                     </CardFooter>
                   </CardHeader>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   <CardContent>
+                    <h3 className="text-sm font-semibold mb-3 px-1 text-primary">Simplified Core Format</h3>
                     <Accordion type="single" collapsible className="w-full">
                       <AccordionItem value="mc">
-                        <AccordionTrigger>Multiple Choice</AccordionTrigger>
+                        <AccordionTrigger>Multiple Choice / Answers</AccordionTrigger>
                         <AccordionContent>
-                          <div className="space-y-2 text-sm pt-1 pb-3">
-                            <p className="text-foreground">List options with A) B) C) D) and indicate the correct answer:</p>
-                            <div className="bg-muted/30 p-3 rounded-lg">
-                              <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`What is 2+2?
+                          <div className="space-y-4 text-sm pt-1 pb-3">
+                            <div>
+                              <p className="text-foreground font-medium">Multiple Choice (Single Answer):</p>
+                              <div className="bg-muted/30 p-3 rounded-lg mt-1">
+                                <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`What is 2+2?
   A) 3
   B) 4
   C) 5
-  D) 6
   Answer: B`}</pre>
+                              </div>
+                            </div>
+                            <div>
+                              <p className="text-foreground font-medium">Multiple Answers (Multi-Select):</p>
+                              <p className="text-muted-foreground text-xs mb-1">List multiple letters (A, B) or mark each with *</p>
+                              <div className="bg-muted/30 p-3 rounded-lg">
+                                <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`Select the even numbers:
+*A) 2
+ B) 3
+*C) 4
+Answer: A, C`}</pre>
+                              </div>
                             </div>
                           </div>
                         </AccordionContent>
@@ -357,10 +373,10 @@ const Dashboard = () => {
                         <AccordionTrigger >Short Answer</AccordionTrigger>
                         <AccordionContent>
                           <div className="space-y-2 text-sm pt-1 pb-3">
-                            <p className="text-foreground">Start with "SA:" or end with [Short Answer]:</p>
+                            <p className="text-foreground font-medium">Standard Style:</p>
                             <div className="bg-muted/30 p-3 rounded-lg">
-                              <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`SA: What year did WWII end?
-  Answer: 1945`}</pre>
+                              <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`What year did WWII end?
+Answer: 1945`}</pre>
                             </div>
                           </div>
                         </AccordionContent>
@@ -370,23 +386,31 @@ const Dashboard = () => {
                         <AccordionTrigger >Essay Questions</AccordionTrigger>
                         <AccordionContent>
                           <div className="space-y-2 text-sm pt-1 pb-3">
-                            <p className="text-foreground">Start with "Essay:" or end with [Essay]:</p>
+                            <p className="text-foreground font-medium">Standard Style:</p>
                             <div className="bg-muted/30 p-3 rounded-lg">
                               <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`Essay: Explain the causes of World War I.
-  Points: 10`}</pre>
+Points: 10`}</pre>
                             </div>
                           </div>
                         </AccordionContent>
                       </AccordionItem>
 
-                      <AccordionItem value="fitb" >
-                        <AccordionTrigger >Fill in the Blank</AccordionTrigger>
+                      <AccordionItem value="fmb" >
+                        <AccordionTrigger >Multiple Blanks (FMB)</AccordionTrigger>
                         <AccordionContent>
-                          <div className="space-y-2 text-sm pt-1 pb-3">
-                            <p className="text-foreground">Use _____ for blanks:</p>
-                            <div className="bg-muted/30 p-3 rounded-lg">
-                              <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`The capital of France is _____.
-  Answer: Paris`}</pre>
+                          <div className="space-y-4 text-sm pt-1 pb-3">
+                            <div>
+                              <p className="text-foreground font-medium">Auto-Blank Style (Easiest):</p>
+                              <div className="bg-muted/30 p-3 rounded-lg mt-1">
+                                <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`The capital of [France] is [Paris].`}</pre>
+                              </div>
+                            </div>
+                            <div>
+                              <p className="text-foreground font-medium">Mapped Style (For Synonyms):</p>
+                              <div className="bg-muted/30 p-3 rounded-lg mt-1">
+                                <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`The [color] jumped over the [animal].
+Answers: color: red, animal: dog`}</pre>
+                              </div>
                             </div>
                           </div>
                         </AccordionContent>
@@ -482,22 +506,40 @@ const Dashboard = () => {
                     {/* Render answers if present */}
                     {Array.isArray(question.answers) && question.answers.length > 1 && (
                       <div className="space-y-1">
-                        {question.answers.map((ans: any, optIndex: number) => (
-                          <div
-                            key={optIndex}
-                            className={`p-2 rounded text-sm ${ans.id === question.correct_answer_id
-                              ? 'bg-green-400/10 border border-green-400/50'
-                              : 'bg-muted/30'
-                              }`}
-                          >
-                            {ans.text}
-                          </div>
-                        ))}
+                        {question.answers.map((ans: any, optIndex: number) => {
+                          const isCorrect = ans.id === question.correct_answer_id || 
+                                          (question.correct_answer_ids && question.correct_answer_ids.includes(ans.id));
+                          return (
+                            <div
+                              key={optIndex}
+                              className={`p-2 rounded text-sm ${isCorrect
+                                ? 'bg-green-400/10 border border-green-400/50'
+                                : 'bg-muted/30'
+                                }`}
+                            >
+                              {ans.text}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* FMB variables */}
+                    {question.variables && (
+                      <div className="space-y-2 mt-2">
+                        <p className="text-sm font-medium text-primary">Variable Mappings:</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {Object.entries(question.variables).map(([key, vals]: [string, any]) => (
+                            <div key={key} className="p-2 bg-muted/30 rounded text-xs">
+                              <span className="font-bold">[{key}]:</span> {Array.isArray(vals) ? vals.join(", ") : vals}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
 
                     {/* Fallback for single answer */}
-                    {question.answers && (
+                    {question.answers && !question.variables && question.answers.length === 1 && (
                       <div className="text-sm">
                         <span className="font-medium text-primary">Answer: </span>
                         <span className="text-muted-foreground">

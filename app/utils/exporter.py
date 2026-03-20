@@ -89,6 +89,109 @@ def _create_short_answer_item(section, question):
         ET.SubElement(conditionvar, 'varequal', {'respident': 'response1'}).text = answer['text']
     ET.SubElement(respcondition, 'setvar', {'action': 'Set', 'varname': 'SCORE'}).text = '100'
 
+def _create_fmb_item(section, question):
+    """Builds the XML for a Fill in Multiple Blanks question."""
+    item = ET.SubElement(section, 'item', {'ident': question['id'], 'title': "Question"})
+    
+    # Metadata (Points and Type)
+    itemmetadata = ET.SubElement(item, 'itemmetadata')
+    qtimetadata = ET.SubElement(itemmetadata, 'qtimetadata')
+    
+    points_field = ET.SubElement(qtimetadata, 'qtimetadatafield')
+    ET.SubElement(points_field, 'fieldlabel').text = 'points_possible'
+    ET.SubElement(points_field, 'fieldentry').text = str(float(question['points']))
+    
+    type_field = ET.SubElement(qtimetadata, 'qtimetadatafield')
+    ET.SubElement(type_field, 'fieldlabel').text = 'question_type'
+    ET.SubElement(type_field, 'fieldentry').text = 'fill_in_multiple_blanks_question'
+
+    # Presentation
+    presentation = ET.SubElement(item, 'presentation')
+    material = ET.SubElement(presentation, 'material')
+    ET.SubElement(material, 'mattext', {'texttype': 'text/html'}).text = f"<div><p>{question['question_text']}</p></div>"
+    
+    for var, answers in question['variables'].items():
+        response_lid = ET.SubElement(presentation, 'response_lid', {'ident': f"response_{var}", 'rcardinality': 'Single'})
+        # Presentation for variable (unseen but required)
+        var_material = ET.SubElement(response_lid, 'material')
+        ET.SubElement(var_material, 'mattext', {'texttype': 'text/plain'}).text = var
+        render_fib = ET.SubElement(response_lid, 'render_fib')
+        ET.SubElement(render_fib, 'response_label', {'ident': f"answer_{var}"})
+        
+    # Response Processing
+    resprocessing = ET.SubElement(item, 'resprocessing')
+    outcomes = ET.SubElement(resprocessing, 'outcomes')
+    ET.SubElement(outcomes, 'decvar', {'maxvalue': '100', 'minvalue': '0', 'varname': 'SCORE', 'vartype': 'Decimal'})
+    
+    # Scoring: Logic usually requires all variables to be correct for 100% or partial credit
+    # For now, we'll do simple full credit if all answers match
+    respcondition = ET.SubElement(resprocessing, 'respcondition', {'continue': 'No'})
+    conditionvar = ET.SubElement(respcondition, 'conditionvar')
+    
+    # Requirement: ALL variables must match a correct answer
+    for var, answers in question['variables'].items():
+        if len(answers) == 1:
+            ET.SubElement(conditionvar, 'varequal', {'respident': f"response_{var}"}).text = answers[0]
+        elif len(answers) > 1:
+            or_node = ET.SubElement(conditionvar, 'or')
+            for ans in answers:
+                ET.SubElement(or_node, 'varequal', {'respident': f"response_{var}"}).text = ans
+                
+    ET.SubElement(respcondition, 'setvar', {'action': 'Set', 'varname': 'SCORE'}).text = '100'
+
+    ET.SubElement(respcondition, 'setvar', {'action': 'Set', 'varname': 'SCORE'}).text = '100'
+
+def _create_multi_answer_item(section, question):
+    """Builds the XML for a Multiple Answer (Multi-select) question."""
+    item = ET.SubElement(section, 'item', {'ident': question['id'], 'title': "Question"})
+    
+    # Metadata
+    itemmetadata = ET.SubElement(item, 'itemmetadata')
+    qtimetadata = ET.SubElement(itemmetadata, 'qtimetadata')
+    
+    points_field = ET.SubElement(qtimetadata, 'qtimetadatafield')
+    ET.SubElement(points_field, 'fieldlabel').text = 'points_possible'
+    ET.SubElement(points_field, 'fieldentry').text = str(float(question['points']))
+    
+    type_field = ET.SubElement(qtimetadata, 'qtimetadatafield')
+    ET.SubElement(type_field, 'fieldlabel').text = 'question_type'
+    ET.SubElement(type_field, 'fieldentry').text = 'multiple_answers_question'
+
+    # Presentation
+    presentation = ET.SubElement(item, 'presentation')
+    material = ET.SubElement(presentation, 'material')
+    ET.SubElement(material, 'mattext', {'texttype': 'text/html'}).text = f"<div><p>{question['question_text']}</p></div>"
+    
+    response_lid = ET.SubElement(presentation, 'response_lid', {'ident': 'response1', 'rcardinality': 'Multiple'})
+    render_choice = ET.SubElement(response_lid, 'render_choice')
+    
+    for answer in question['answers']:
+        response_label = ET.SubElement(render_choice, 'response_label', {'ident': answer['id']})
+        ans_material = ET.SubElement(response_label, 'material')
+        ET.SubElement(ans_material, 'mattext', {'texttype': 'text/plain'}).text = answer['text']
+        
+    # Response Processing
+    resprocessing = ET.SubElement(item, 'resprocessing')
+    outcomes = ET.SubElement(resprocessing, 'outcomes')
+    ET.SubElement(outcomes, 'decvar', {'maxvalue': '100', 'minvalue': '0', 'varname': 'SCORE', 'vartype': 'Decimal'})
+    
+    # Require EVERY correct answer to be selected
+    respcondition = ET.SubElement(resprocessing, 'respcondition', {'continue': 'No'})
+    conditionvar = ET.SubElement(respcondition, 'conditionvar')
+    
+    # Canvas expects multiple varequal tags within an <and> for MR
+    and_node = ET.SubElement(conditionvar, 'and')
+    for correct_id in question['correct_answer_ids']:
+        ET.SubElement(and_node, 'varequal', {'respident': 'response1'}).text = correct_id
+        
+    # And NO incorrect answers!
+    incorrect_ids = [a['id'] for a in question['answers'] if a['id'] not in question['correct_answer_ids']]
+    for inc_id in incorrect_ids:
+        not_node = ET.SubElement(and_node, 'not')
+        ET.SubElement(not_node, 'varequal', {'respident': 'response1'}).text = inc_id
+
+    ET.SubElement(respcondition, 'setvar', {'action': 'Set', 'varname': 'SCORE'}).text = '100'
+
 def create_qti_1_2_package(quiz_title, parsed_data):
     """
     Acts as a router, calling the correct XML generation function
@@ -107,8 +210,12 @@ def create_qti_1_2_package(quiz_title, parsed_data):
         
         if q_type in ["multiple_choice_question", "true_false_question"]:
             _create_mcq_item(section, question)
-        elif q_type in ["short_answer_question", "fill_in_the_blank_question"]:
+        elif q_type == "short_answer_question":
             _create_short_answer_item(section, question)
+        elif q_type == "fill_in_multiple_blanks_question":
+            _create_fmb_item(section, question)
+        elif q_type == "multiple_answers_question":
+            _create_multi_answer_item(section, question)
         elif q_type == "essay_question":
             _create_essay_item(section, question)
         else:

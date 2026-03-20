@@ -20,9 +20,9 @@ def detect_respondus_format(text):
     return False
 
 def parse_respondus_mcq(lines, i, points):
-    """Parses Respondus-style Multiple Choice questions."""
+    """Parses Respondus-style Multiple Choice/Multiple Response questions."""
     options = []
-    correct_answer_id = None
+    correct_ids = []
     question_lines = []
     
     found_options = False
@@ -37,24 +37,34 @@ def parse_respondus_mcq(lines, i, points):
             ans_id = f"q{i}_ans{len(options)}"
             options.append({"id": ans_id, "text": opt_text})
             if is_correct:
-                correct_answer_id = ans_id
+                correct_ids.append(ans_id)
         elif not found_options:
             question_lines.append(line)
             
     question_text = " ".join(question_lines).strip()
     question_text = _clean_points_text(question_text)
     
-    if not options or not correct_answer_id:
-        return {"id": f"error_{i}", "type": "error", "question_text": " ".join(lines), "error": "Invalid Respondus MCQ format. Ensure correct answer is marked with *."}
+    if not options or not correct_ids:
+        return {"id": f"error_{i}", "type": "error", "question_text": " ".join(lines), "error": "Invalid Respondus MCQ format. Ensure at least one correct answer is marked with *."}
 
-    return {
-        "id": f"q{i}", 
-        "type": "multiple_choice_question", 
-        "question_text": question_text,
-        "answers": options, 
-        "correct_answer_id": correct_answer_id, 
-        "points": points
-    }
+    if len(correct_ids) > 1:
+        return {
+            "id": f"q{i}", 
+            "type": "multiple_answers_question", 
+            "question_text": question_text,
+            "answers": options, 
+            "correct_answer_ids": correct_ids,
+            "points": points
+        }
+    else:
+        return {
+            "id": f"q{i}", 
+            "type": "multiple_choice_question", 
+            "question_text": question_text,
+            "answers": options, 
+            "correct_answer_id": correct_ids[0], 
+            "points": points
+        }
 
 def parse_respondus_tf(lines, i, points):
     """Parses Respondus-style True/False questions."""
@@ -96,5 +106,125 @@ def parse_respondus_essay(lines, i, points):
         "type": "essay_question",
         "question_text": question_text,
         "answers": [], 
+        "points": points
+    }
+
+def parse_respondus_fib(lines, i, points):
+    """
+    Parses Respondus-style Fill-in-the-blank (Short Answer).
+    Type: F
+    Supports multiple acceptable correct answers.
+    """
+    answers = []
+    question_lines = []
+    
+    # First line might be question, or Type: F
+    for line in lines:
+        l = line.strip()
+        # Option markers like a. or 1.
+        opt_match = re.match(r'^[a-z0-9][\.\)]\s*(.*)', l, re.IGNORECASE)
+        if opt_match:
+            answers.append({"id": f"q{i}_ans{len(answers)}", "text": opt_match.group(1).strip()})
+        else:
+            question_lines.append(l)
+            
+    question_text = _clean_points_text(" ".join(question_lines).strip())
+    
+    if not answers:
+        return {"id": f"error_{i}", "type": "error", "question_text": question_text, "error": "No answers found for Short Answer question. List them as 'a. Answer'."}
+
+    return {
+        "id": f"q{i}",
+        "type": "short_answer_question",
+        "question_text": question_text,
+        "answers": answers,
+        "points": points
+    }
+
+def parse_respondus_fmb(lines, i, points):
+    """
+    Parses Respondus-style Fill-in-Multiple-Blanks.
+    Type: FMB
+    Text: [a] is red.
+    a = Roses
+    """
+    question_lines = []
+    answer_map = {} # variable -> list of answers
+    
+    for line in lines:
+        l = line.strip()
+        # Look for var = value
+        match = re.match(r'^([^=]+)\s*=\s*(.*)', l)
+        if match:
+            var = match.group(1).strip().lower()
+            val = match.group(2).strip()
+            if var not in answer_map:
+                answer_map[var] = []
+            answer_map[var].append(val)
+        else:
+            question_lines.append(l)
+            
+    question_text = _clean_points_text(" ".join(question_lines).strip())
+    
+    # Extract variables from brackets in text
+    variables = re.findall(r'\[([^\]]+)\]', question_text)
+    if not variables:
+        return {"id": f"error_{i}", "type": "error", "question_text": question_text, "error": "No bracketed variables found in FMB question (e.g. [color])."}
+    
+    # Build answers structure
+    answers = {} # key -> list of strings
+    for var in variables:
+        v_lower = var.lower()
+        if v_lower in answer_map:
+            answers[var] = answer_map[v_lower]
+        else:
+            # Fallback if they didn't provide a mapping, use an empty list or error
+            answers[var] = []
+
+    return {
+        "id": f"q{i}",
+        "type": "fill_in_multiple_blanks_question",
+        "question_text": question_text,
+        "variables": answers, 
+        "points": points
+    }
+
+def parse_respondus_mr(lines, i, points):
+    """
+    Parses Respondus-style Multiple Response (Multi-select).
+    Type: MR
+    Correct answers marked with *.
+    """
+    options = []
+    correct_ids = []
+    question_lines = []
+    
+    found_options = False
+    for line in lines:
+        # Match *A) text or A) text
+        opt_match = re.match(r'^(\*?)([A-Z])[\.\)]\s*(.*)', line.strip(), re.IGNORECASE)
+        if opt_match:
+            found_options = True
+            is_correct = bool(opt_match.group(1))
+            opt_text = opt_match.group(3).strip()
+            
+            ans_id = f"q{i}_ans{len(options)}"
+            options.append({"id": ans_id, "text": opt_text})
+            if is_correct:
+                correct_ids.append(ans_id)
+        elif not found_options:
+            question_lines.append(line)
+            
+    question_text = _clean_points_text(" ".join(question_lines).strip())
+    
+    if not options or not correct_ids:
+        return {"id": f"error_{i}", "type": "error", "question_text": " ".join(lines), "error": "Invalid Respondus MR format. Ensure correct answers are marked with *."}
+
+    return {
+        "id": f"q{i}", 
+        "type": "multiple_answers_question", 
+        "question_text": question_text,
+        "answers": options, 
+        "correct_answer_ids": correct_ids, # Note: plural
         "points": points
     }
