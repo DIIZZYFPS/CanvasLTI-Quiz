@@ -527,6 +527,7 @@ const Dashboard = () => {
             <Button
               onClick={() => handleFinalExport('qti')}
               className="bg-gradient-primary hover:shadow-glow flex items-center gap-2"
+              disabled={errorCount > 0}
             >
               <Download className="w-4 h-4" />
               Export QTI
@@ -534,6 +535,7 @@ const Dashboard = () => {
             {inCanvas && <Button
               onClick={() => handleFinalExport('canvas')}
               className="bg-gradient-primary hover:shadow-glow flex items-center gap-2"
+              disabled={errorCount > 0}
             >
               <Download className="w-4 h-4" />
               Export Canvas
