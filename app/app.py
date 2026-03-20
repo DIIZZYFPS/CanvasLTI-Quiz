@@ -271,11 +271,11 @@ def extract_points(text, default="1"):
     """
     pattern = re.compile(
         r'(?:'
-        r'[\(\[]\s*\b(?:Points?|Score|Pts?)\b:?\s*(?P<label_bracketed>\d+)\s*[\)\]]'  # [Points: 10], (Score 5)
+        r'[\(\[]\s*\b(?:Points?|Score|Pts?)\b:?\s*(?P<label_bracketed>\d*\.?\d+)\s*[\)\]]'  # [Points: 10], (Score 5)
         r'|'
-        r'\b(?:Points?|Score|Pts?)\b:?\s*(?P<label>\d+)'                              # Points: 10
+        r'\b(?:Points?|Score|Pts?)\b:?\s*(?P<label>\d*\.?\d+)'                              # Points: 10
         r'|'
-        r'\(\s*(?P<numeric_first>\d+)\s*(?:points?|pts?)\s*\)'                        # (10 points), (5 pts)
+        r'\(\s*(?P<numeric_first>\d*\.?\d+)\s*(?:points?|pts?)\s*\)'                        # (10 points), (5 pts)
         r')',
         re.IGNORECASE,
     )
@@ -291,11 +291,11 @@ def _clean_points_text(text):
     """Removes the points string from the question text to clean it up."""
     return re.sub(
         r'(?:'
-        r'[\(\[]\s*\b(?:Points?|Score|Pts?)\b:?\s*\d+\s*[\)\]]'   # [Points: 10], (Score 5)
+        r'[\(\[]\s*\b(?:Points?|Score|Pts?)\b:?\s*\d*\.?\d+\s*[\)\]]'   # [Points: 10], (Score 5)
         r'|'
-        r'\b(?:Points?|Score|Pts?)\b:?\s*\d+'                    # Points: 10
+        r'\b(?:Points?|Score|Pts?)\b:?\s*\d*\.?\d+'                    # Points: 10
         r'|'
-        r'\(\s*\d+\s*(?:points?|pts?)\s*\)'                      # (10 points), (5 pts)
+        r'\(\s*\d*\.?\d+\s*(?:points?|pts?)\s*\)'                      # (10 points), (5 pts)
         r')',
         '',
         text,
