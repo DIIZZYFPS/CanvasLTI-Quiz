@@ -1,44 +1,8 @@
 import re
+from .text_utils import extract_points, _clean_points_text
+from .respondus_parser import detect_respondus_format, parse_respondus_mcq, parse_respondus_tf, parse_respondus_essay
 
-def extract_points(text, default="1"):
-    """
-    Extracts points from a string in various formats:
-    - (10 points), (5 pts)
-    - Points: 10, Score: 10
-    Returns the points as a string, e.g., "10".
-    """
-    pattern = re.compile(
-        r'(?:'
-        r'[\(\[]\s*\b(?:Points?|Score|Pts?)\b:?\s*(?P<label_bracketed>\d*\.?\d+)\s*[\)\]]'  # [Points: 10], (Score 5)
-        r'|'
-        r'\b(?:Points?|Score|Pts?)\b:?\s*(?P<label>\d*\.?\d+)'                              # Points: 10
-        r'|'
-        r'\(\s*(?P<numeric_first>\d*\.?\d+)\s*(?:points?|pts?)\s*\)'                        # (10 points), (5 pts)
-        r')',
-        re.IGNORECASE,
-    )
-    match = pattern.search(text)
-    if match:
-        for group_name in ("label_bracketed", "label", "numeric_first"):
-            value = match.group(group_name)
-            if value is not None:
-                return value
-    return default
-
-def _clean_points_text(text):
-    """Removes the points string from the question text to clean it up."""
-    return re.sub(
-        r'(?:'
-        r'[\(\[]\s*\b(?:Points?|Score|Pts?)\b:?\s*\d*\.?\d+\s*[\)\]]'   # [Points: 10], (Score 5)
-        r'|'
-        r'\b(?:Points?|Score|Pts?)\b:?\s*\d*\.?\d+'                    # Points: 10
-        r'|'
-        r'\(\s*\d*\.?\d+\s*(?:points?|pts?)\s*\)'                      # (10 points), (5 pts)
-        r')',
-        '',
-        text,
-        flags=re.IGNORECASE,
-    ).strip()
+# --- Core Branch Parsers ---
 
 def _parse_multiple_choice(lines, index):
     """Parses a multiple-choice question with diagnostic error messages."""
@@ -256,6 +220,7 @@ def _parse_essay(line, index):
         "points": points
     }
 
+
 def parse_quiz_text(text_input):
     """
     Correctly parses multi-line quiz questions from a single text block.
@@ -267,68 +232,78 @@ def parse_quiz_text(text_input):
     for i, block in enumerate(blocks):
         if not block.strip():
             continue
-        print(f"Parsing block {i}: {block}")
+        
+        is_respondus = detect_respondus_format(block)
         lines = [line.strip() for line in block.split('\n') if line.strip()]
-        full_block_text = " ".join(lines) # Used for simple keyword checks
-        full_lower = full_block_text.lower()
+        points = extract_points(block)
 
-        question_data = None
+        if is_respondus:
+            print(f"Parsing block {i} as Respondus Format")
+            # Detect subtype
+            type_match = re.search(r'^Type:\s*([A-Z]+)', block, re.IGNORECASE | re.MULTILINE)
+            r_type = type_match.group(1).upper() if type_match else "MC"
+            
+            # Legacy T/F check (not strictly 'Type: TF' but just *True/*False)
+            if r_type == "MC" and re.search(r'^\s*\*(True|False|T|F)\s*$', block, re.IGNORECASE | re.MULTILINE):
+                r_type = "TF"
 
-        #Removes leading numbering like "1. " or "2) "
-        if re.match(r'^\d+[\.\)]\s+', lines[0]):
-            lines[0] = re.sub(r'^\d+[\.\)]\s+', '', lines[0])
+            # Pre-clean lines for Respondus: remove Type: and Points: and numbering
+            clean_lines = []
+            for line in lines:
+                l = line.strip()
+                if re.match(r'^(Type|Points):', l, re.IGNORECASE):
+                    continue
+                if re.match(r'^\d+[\.\)]\s+', l):
+                    l = re.sub(r'^\d+[\.\)]\s+', '', l)
+                clean_lines.append(l)
+
+            if r_type == "MC":
+                question_data = parse_respondus_mcq(clean_lines, i, points)
+            elif r_type == "TF":
+                question_data = parse_respondus_tf(clean_lines, i, points)
+            elif r_type in ["E", "ESSAY"]:
+                question_data = parse_respondus_essay(clean_lines, i, points)
+            else:
+                question_data = {"id": f"error_{i}", "type": "error", "question_text": block, "error": f"Unsupported Respondus type: {r_type}"}
+        else:
+            # Fallback to Core Branch
+            print(f"Parsing block {i} as Core Format")
             full_block_text = " ".join(lines)
             full_lower = full_block_text.lower()
-        
-        # --- Router logic ---
-        
-        # 1. Check explicit prefixes first (Highest priority, matching your instructions)
-        if full_lower.startswith("tf:") or full_lower.startswith("true/false:"):
-            print(f"Detected True/False (Prefix) in block {i}")
-            question_data = _parse_true_false(lines, i)
-
-        elif full_lower.startswith("sa:") or "[short answer]" in full_lower:
-            print(f"Detected Short Answer (Prefix) in block {i}")
-            question_data = _parse_short_answer(full_block_text, i)
-        
-        elif full_lower.startswith("essay:") or "[essay]" in full_lower:
-            print(f"Detected Essay (Prefix) in block {i}")
-            question_data = _parse_essay(full_block_text, i)
-
-        # 2. Check Structural Indicators (Fallbacks)
-        elif re.search(r'_{2,}', full_block_text) and "answer:" in full_lower:
-            print(f"Detected Fill-in-the-Blank (Structure) in block {i}")
-            question_data = _parse_fill_in_the_blank(full_block_text, i)
-
-        elif "answer:" in full_lower and re.search(r'\n\s*[A-Z]\)', "\n"+"\n".join(lines), re.IGNORECASE):
-            # We join lines here to ensure we are looking for options in the body, not just the single line string
-            print(f"Detected Multiple Choice (Structure) in block {i}")
-            question_data = _parse_multiple_choice(lines, i)
             
-        # 3. Last Resort Legacy Check
-        elif "answer:" in full_lower and re.search(r'\((T/F|True/False)\)', full_block_text, re.IGNORECASE):
-            print(f"Detected True/False (Legacy Suffix) in block {i}")
-            question_data = _parse_true_false(lines, i)
-
-        else:
-            # Enhanced Error Identification
-            error_hint = "Format not recognized."
+            # (Existing Router Logic)
+            if re.match(r'^\d+[\.\)]\s+', lines[0]):
+                lines[0] = re.sub(r'^\d+[\.\)]\s+', '', lines[0])
+                full_block_text = " ".join(lines)
+                full_lower = full_block_text.lower()
             
-            if re.search(r'\n[A-Z][\)\.]', "\n"+"\n".join(lines), re.IGNORECASE):
-                error_hint = "Looks like Multiple Choice, but check if the 'Answer:' line is correct."
-            elif re.search(r'_{1,}', block):
-                error_hint = "Looks like Fill-in-the-Blank, but check if 'Answer:' line is present. Or if there are enough underscores for blanks."
-            elif "True" in block or "False" in block:
-                error_hint = "Looks like True/False. Ensure it ends with 'Answer: True' or 'Answer: False'."
+            if full_lower.startswith("tf:") or full_lower.startswith("true/false:"):
+                question_data = _parse_true_false(lines, i)
+            elif full_lower.startswith("sa:") or "[short answer]" in full_lower:
+                question_data = _parse_short_answer(full_block_text, i)
+            elif full_lower.startswith("essay:") or "[essay]" in full_lower:
+                question_data = _parse_essay(full_block_text, i)
+            elif re.search(r'_{2,}', full_block_text) and "answer:" in full_lower:
+                question_data = _parse_fill_in_the_blank(full_block_text, i)
+            elif "answer:" in full_lower and re.search(r'\n\s*[A-Z]\)', "\n"+"\n".join(lines), re.IGNORECASE):
+                question_data = _parse_multiple_choice(lines, i)
+            elif "answer:" in full_lower and re.search(r'\((T/F|True/False)\)', full_block_text, re.IGNORECASE):
+                question_data = _parse_true_false(lines, i)
+            else:
+                error_hint = "Format not recognized."
+                if re.search(r'\n[A-Z][\)\.]', "\n"+"\n".join(lines), re.IGNORECASE):
+                    error_hint = "Looks like Multiple Choice, but check if the 'Answer:' line is correct."
+                elif re.search(r'_{1,}', block):
+                    error_hint = "Looks like Fill-in-the-Blank, but check if 'Answer:' line is present."
+                elif "True" in block or "False" in block:
+                    error_hint = "Looks like True/False. Ensure it ends with 'Answer: True' or 'Answer: False'."
 
-            print(f"Warning: Could not determine question type for block {i}. {error_hint}")
-            
-            question_data = {
-                "id": f"error_{i}",
-                "type": "error",
-                "question_text": block,
-                "error": f"{error_hint} Please refer to the formatting guide.",
-            }
+                question_data = {
+                    "id": f"error_{i}",
+                    "type": "error",
+                    "question_text": block,
+                    "error": f"{error_hint} Please refer to the formatting guide.",
+                }
         
         if question_data:
             questions.append(question_data)
