@@ -30,7 +30,7 @@ def create_app():
         "SESSION_COOKIE_SECURE": True,
         "SESSION_COOKIE_SAMESITE": 'None',
         "DEBUG_TB_INTERCEPT_REDIRECTS": False,
-        "PERMANENT_SESSION_LIFETIME": timedelta(hours=3)
+        "PERMANENT_SESSION_LIFETIME": timedelta(hours=1)
     })
 
     cache.init_app(app)
