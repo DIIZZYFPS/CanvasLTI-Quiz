@@ -1,6 +1,15 @@
 import xml.etree.ElementTree as ET
+import re
 import random
 import xml.dom.minidom
+
+def _safe_var_ident(var, index):
+    """Convert a FMB variable name to a safe QTI identifier.
+    Replaces spaces and special characters; falls back to a positional slug."""
+    slug = re.sub(r'[^A-Za-z0-9_]', '_', var).strip('_')
+    if not slug:
+        slug = f"var_{index}"
+    return f"response_{slug}"
 
 def _create_mcq_item(section, question):
     """Builds the XML for a Multiple Choice or True/False question."""
@@ -144,9 +153,11 @@ def _create_fmb_item(section, question):
     # Generate numeric IDs for answers for original_answer_ids metadata
     all_ans_ids = []
     var_to_id_map = {} # (var, text) -> numeric_id
+    var_to_ident = {}  # var -> safe QTI ident
     id_counter = 9000 + random.randint(100, 999)
 
-    for var, text_list in question['variables'].items():
+    for idx, (var, text_list) in enumerate(question['variables'].items()):
+        var_to_ident[var] = _safe_var_ident(var, idx)
         for text in text_list:
             ans_id = str(id_counter)
             id_counter += 1
@@ -164,7 +175,8 @@ def _create_fmb_item(section, question):
     ET.SubElement(material, 'mattext', {'texttype': 'text/html'}).text = f"<div><p><span>{question['question_text']}</span></p></div>"
     
     for var, text_list in question['variables'].items():
-        response_lid = ET.SubElement(presentation, 'response_lid', {'ident': f"response_{var}"})
+        var_ident = var_to_ident[var]
+        response_lid = ET.SubElement(presentation, 'response_lid', {'ident': var_ident})
         var_mat = ET.SubElement(response_lid, 'material')
         ET.SubElement(var_mat, 'mattext', {'texttype': 'text/plain'}).text = var
         
@@ -187,16 +199,17 @@ def _create_fmb_item(section, question):
     for var, text_list in question['variables'].items():
         respcondition = ET.SubElement(resprocessing, 'respcondition')
         conditionvar = ET.SubElement(respcondition, 'conditionvar')
+        var_ident = var_to_ident[var]
         
         # If multiple synonyms, wrap in <or>
         if len(text_list) > 1:
             or_node = ET.SubElement(conditionvar, 'or')
             for text in text_list:
                 ans_id = var_to_id_map[(var, text)]
-                ET.SubElement(or_node, 'varequal', {'respident': f"response_{var}"}).text = ans_id
+                ET.SubElement(or_node, 'varequal', {'respident': var_ident}).text = ans_id
         else:
             ans_id = var_to_id_map[(var, text_list[0])]
-            ET.SubElement(conditionvar, 'varequal', {'respident': f"response_{var}"}).text = ans_id
+            ET.SubElement(conditionvar, 'varequal', {'respident': var_ident}).text = ans_id
             
         ET.SubElement(respcondition, 'setvar', {'action': 'Add', 'varname': 'SCORE'}).text = f"{points_per_blank:.2f}"
 

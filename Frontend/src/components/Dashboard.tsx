@@ -111,9 +111,8 @@ const Dashboard = () => {
           setConversionStatus('processing');
           setProgress(10);
 
-          // Read the injected credentials from the global window object
+          // The Canvas API token is kept server-side; only the course ID is read from the page
           const courseId = (window as any).CANVAS_COURSE_ID;
-          const apiToken = (window as any).CANVAS_API_TOKEN;
 
           let response;
           try {
@@ -130,7 +129,6 @@ const Dashboard = () => {
                 quiz_title: quizTitle,
                 quiz_text: quizContent,
                 course_id: courseId,
-                canvas_api_token: apiToken
               });
             }
           } catch (error: any) {
@@ -152,13 +150,19 @@ const Dashboard = () => {
           toast.success("Upload initiated! Processing...");
           setProgress(30);
 
-          // Poll the progress
+          // Poll the progress — token is handled server-side, max 60 attempts (~2 min)
+          const MAX_POLL_ATTEMPTS = 60;
+          let pollAttempts = 0;
           let isComplete = false;
-          while (!isComplete) {
-            // We poll via our proxy to avoid CORS and token exposure
-            const pollRes = await api.get(`/proxy/progress?url=${encodeURIComponent(progressUrl)}&token=${apiToken}`);
+          while (!isComplete && pollAttempts < MAX_POLL_ATTEMPTS) {
+            pollAttempts++;
+            // We poll via our proxy to avoid CORS; no token in the query string
+            const pollRes = await api.get(`/proxy/progress?url=${encodeURIComponent(progressUrl)}`);
             const state = pollRes.data.workflow_state;
-            const completion = pollRes.data.completion;
+            const rawCompletion = pollRes.data.completion;
+            const completion = typeof rawCompletion === 'number' && rawCompletion >= 0 && rawCompletion <= 100
+              ? rawCompletion
+              : 0;
 
             setProgress(30 + (completion * 0.7)); // Scale 0-100 to 30-100%
 
@@ -176,6 +180,11 @@ const Dashboard = () => {
               // wait 2 seconds before polling again
               await new Promise(r => setTimeout(r, 2000));
             }
+          }
+
+          if (!isComplete) {
+            setConversionStatus('error');
+            toast.error("Canvas upload timed out. Please check Canvas directly.");
           }
         }
       } catch (err: any) {
@@ -273,13 +282,14 @@ const Dashboard = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Input
                     id="quiz-title"
-                    placeholder="Quiz Title"
+                    placeholder="Quiz Title (required)"
+                    required
                     value={quizTitle}
                     onChange={(e) => setQuizTitle(e.target.value)}
                   />
                   <Button
                     onClick={() => handleConvert()}
-                    disabled={(!quizContent.trim() && !selectedFile) || conversionStatus === 'processing'}
+                    disabled={(!quizContent.trim() && !selectedFile) || !quizTitle.trim() || conversionStatus === 'processing'}
                     variant="outline"
                     className="bg-gradient-primary hover:shadow-glow transition-all duration-300 col-span-1 md:col-span-2"
                   >

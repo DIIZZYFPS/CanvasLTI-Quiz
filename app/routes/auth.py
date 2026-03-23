@@ -12,6 +12,12 @@ def auth_canvas():
     API_CLIENT_ID = os.getenv('CANVAS_API_CLIENT_ID')
     API_REDIRECT_URI = os.getenv('CANVAS_OAUTH_REDIRECT_URI')
     
+    if not CANVAS_DOMAIN or not API_CLIENT_ID or not API_REDIRECT_URI:
+        return (
+            "Canvas OAuth is not configured. Please set CANVAS_DOMAIN, "
+            "CANVAS_API_CLIENT_ID, and CANVAS_OAUTH_REDIRECT_URI environment variables."
+        ), 500
+    
     # These are the REST scopes that the LTI Key cannot have
     scopes = [
         'url:POST|/api/v1/courses/:course_id/content_migrations',
@@ -55,7 +61,14 @@ def auth_callback():
     }
     
     response = requests.post(f"{CANVAS_DOMAIN}/login/oauth2/token", data=payload)
-    token_data = response.json()
+
+    if not response.ok:
+        return jsonify({"error": "Token exchange failed", "details": response.text}), 400
+
+    try:
+        token_data = response.json()
+    except Exception:
+        return jsonify({"error": "Invalid JSON response from Canvas during token exchange"}), 400
     
     if 'access_token' in token_data:
         session.permanent = True

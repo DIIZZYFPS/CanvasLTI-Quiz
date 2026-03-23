@@ -11,6 +11,11 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    manifest: true,
+    outDir: '../app/assets',
+    emptyOutDir: true,
+  },
   server: {
     proxy: {
       '/api': {

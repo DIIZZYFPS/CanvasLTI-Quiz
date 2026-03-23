@@ -27,7 +27,7 @@ def create_app():
         "SESSION_FILE_DIR": SESSION_DIR,
         "SESSION_COOKIE_NAME": "pylti1p3-flask-app-sessionid",
         "SESSION_COOKIE_HTTPONLY": True,
-        "SESSION_COOKIE_SECURE": True,
+        "SESSION_COOKIE_SECURE": os.getenv("FLASK_ENV", "production") != "development",
         "SESSION_COOKIE_SAMESITE": 'None',
         "DEBUG_TB_INTERCEPT_REDIRECTS": False,
         "PERMANENT_SESSION_LIFETIME": timedelta(hours=1)
@@ -59,7 +59,9 @@ def create_app():
          an LTI or API route will be served the index.html file, allowing
         React Router to handle the frontend routing.
         """
-        return render_template('index.html')
+        from .utils.vite_manifest import get_vite_assets
+        vite_js_asset, vite_css_asset = get_vite_assets()
+        return render_template('index.html', vite_js_asset=vite_js_asset, vite_css_asset=vite_css_asset)
 
     return app
 
