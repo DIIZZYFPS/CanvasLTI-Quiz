@@ -270,10 +270,22 @@ def _parse_core_fmb(line, index):
         for var in variables:
             answer_map[var.lower()] = [var]
     
-    # Build answers
+    # Build answers and validate
     answers = {}
+    missing_vars = []
     for var in variables:
-        answers[var] = answer_map.get(var.lower(), [])
+        ans_list = answer_map.get(var.lower(), [])
+        if not ans_list:
+            missing_vars.append(var)
+        answers[var] = ans_list
+
+    if missing_vars:
+        return {
+            "id": f"error_{index}",
+            "type": "error",
+            "question_text": question_text,
+            "error": f"Missing answers for bracketed variables: {', '.join(missing_vars)}. Each variable like [blank] must have a matching 'blank: answer' in the Answers section."
+        }
 
     return {
         "id": f"q{index}",

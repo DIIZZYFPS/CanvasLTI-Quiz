@@ -1,14 +1,19 @@
 from flask import render_template
+from .vite_manifest import get_vite_assets
 
 def _render_with_globals(template, course_id, api_token):
-    """Renders a template and injects CANVAS_COURSE_ID and CANVAS_API_TOKEN as window globals."""
-    html = render_template(template, course_id=course_id, has_token=bool(api_token))
-    injections = []
+    """Renders a template and injects CANVAS_COURSE_ID as a window global.
+    The API token is intentionally kept server-side only and never sent to the client.
+    """
+    vite_js_asset, vite_css_asset = get_vite_assets()
+    html = render_template(
+        template,
+        course_id=course_id,
+        has_token=bool(api_token),
+        vite_js_asset=vite_js_asset,
+        vite_css_asset=vite_css_asset,
+    )
     if course_id:
-        injections.append(f'window.CANVAS_COURSE_ID = "{course_id}";')
-    if api_token:
-        injections.append(f'window.CANVAS_API_TOKEN = "{api_token}";')
-    if injections:
-        script = f'<script>{" ".join(injections)}</script>'
+        script = f'<script>window.CANVAS_COURSE_ID = "{course_id}";</script>'
         html = html.replace('<head>', f'<head>{script}')
     return html

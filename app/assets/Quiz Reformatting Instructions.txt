@@ -1,0 +1,78 @@
+Objective: Reformat a given set of quiz questions to be compatible with the Canvas QTI Converter tool.
+
+Input: A list of quiz questions in any format.
+
+Output: A plain text file where each question is formatted according to the rules below. Each question should be separated by a blank line.
+
+7. Formatting Rules by Question Type:
+1. Multiple Choice Questions
+
+Structure:
+The question text. You can optionally include point values in parentheses, e.g., (2 points).
+Each multiple-choice option on a new line, formatted with a letter and a parenthesis, e.g., A) ..., B) ....
+The correct answer on a new line, formatted as Answer: <Correct Letter>.
+
+Example:
+Which of these is a JavaScript framework? (2 points)
+A) Django
+B) Laravel
+C) React
+D) Flask
+Answer: C
+
+2. Multiple Answers (NEW)
+
+Structure:
+Similar to Multiple Choice, but you can list multiple letters in the answer line OR mark correct choices with an asterisk (*).
+
+Example A (Starred):
+Select the prime numbers:
+*A) 2
+ B) 4
+*C) 7
+
+Example B (Tagged):
+Select the prime numbers:
+A) 2
+B) 4
+C) 7
+Answer: A, C
+
+3. True/False Questions
+
+Structure:
+The question text, followed by (T/F) or (True/False).
+The correct answer on a new line, formatted as Answer: True or Answer: False.
+
+Example:
+The chemical symbol for Gold is Au. (1 point) Answer: True
+
+4. Short Answer Questions
+
+Structure:
+Questions requiring a typed word or phrase match.
+The correct answer must be on the same line or on a new line, formatted as Answer: <Correct Answer>.
+
+Example:
+What is the name of the galaxy that contains our Solar System? (1 point) Answer: Milky Way
+
+5. Fill in Multiple Blanks (NEW)
+
+Structure:
+Style A (Auto-Blank): Simply wrap the answers in brackets.
+Example: The capital of [France] is [Paris].
+
+Style B (Mapped): Use bracketed variables and a mapping line.
+Example: The [c] of France is [p]. Answers: c: capital, p: Paris
+
+6. Essay Questions
+
+Structure:
+The question must begin with Essay: or end with [Essay].
+Points: 5
+
+Example:
+Essay: Describe the difference between a list and a tuple in Python. Points: 5
+
+*** RESPONDUS COMPATIBILITY ***
+The tool also natively supports the standard Respondus Legacy format (Type: MC, MR, F, FMB, E). You can paste raw Respondus exports directly into the tool.
