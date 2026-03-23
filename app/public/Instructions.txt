@@ -12,48 +12,65 @@ This guide explains how to format your quiz questions so they can be automatical
 *** QUESTION TYPES ***
 
 1. MULTIPLE CHOICE
-   - Usage: Standard questions with options.
+   - Usage: Standard questions with one correct option.
    - Requirement: Question text, followed by options (A, B, C...), followed by "Answer: [Letter]".
    
    Example:
-   Which programming language is known as the language of the web? (2 pts)
+   Which programming language is known as the language of the web?
    A) Python
    B) JavaScript
    C) C++
-   D) Java
    Answer: B
 
-2. TRUE/FALSE
-   - Usage: Binary True/False choice.
-   - Requirement: Start with "TF:" OR end with "Answer: True" or "Answer: False".
+2. MULTIPLE ANSWERS (NEW)
+   - Usage: Questions where students select more than one correct option.
+   - Requirement: List multiple letters in the answer line OR mark correct choices with an asterisk (*).
    
-   Example 1 (Standard):
-   TF: The sun rises in the west. (1 point)
-   Answer: False
+   Example A (Starred):
+   Select the prime numbers:
+   *A) 2
+    B) 4
+   *C) 7
+   
+   Example B (Tagged):
+   Select the prime numbers:
+   A) 2
+   B) 4
+   C) 7
+   Answer: A, C
 
-   Example 2 (Compact):
-   Water boils at 100 degrees Celsius. (T/F) Answer: True
-
-3. SHORT ANSWER
-   - Usage: Questions requiring a typed word or phrase match.
-   - Requirement: Start with "SA:" OR end with "[Short Answer]". Must have "Answer: [text]".
+3. TRUE/FALSE
+   - Usage: Binary True/False choice.
+   - Requirement: "Answer: True" or "Answer: False".
    
    Example:
-   SA: What is the capital of France? (2 points)
+   Water boils at 100 degrees Celsius. (1 point)
+   Answer: True
+
+4. SHORT ANSWER
+   - Usage: Questions requiring a typed word or phrase match.
+   - Requirement: Must have "Answer: [text]".
+   
+   Example:
+   What is the capital of France?
    Answer: Paris
 
-4. FILL IN THE BLANK
-   - Usage: Sentence completion.
-   - Requirement: Use underscores (at least 2, e.g., "_____") to mark the blank.
-   
-   Example:
-   The chemical symbol for water is _____. (3 pts)
-   Answer: H2O
+5. FILL IN MULTIPLE BLANKS (FMB) (NEW)
+   - Usage: Questions with multiple blanks in one sentence.
+   - Style A (Auto-Blank): Simply wrap the answers in brackets.
+     Example: The capital of [France] is [Paris].
+     
+   - Style B (Mapped): Use bracketed variables and a mapping line.
+     Example: The [c] of France is [p].
+     Answers: c: capital, p: Paris
 
-5. ESSAY
+6. ESSAY
    - Usage: Open-ended text response (manual grading).
    - Requirement: Start with "Essay:" OR end with "[Essay]".
    
    Example:
    Essay: Discuss the socio-economic impacts of the Industrial Revolution.
    Points: 10
+
+*** RESPONDUS COMPATIBILITY ***
+The tool also natively supports the standard Respondus Legacy format (Type: MC, MR, F, FMB, E). You can paste raw Respondus exports directly into the tool.

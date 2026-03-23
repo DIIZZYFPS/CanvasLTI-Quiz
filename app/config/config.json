@@ -1,34 +1,45 @@
 {
-
-"https://canvas.beta.instructure.com": [{
-    "default": true,
-    "client_id": "115900000000000280",
-
-    "auth_login_url": "https://canvas.beta.instructure.com/api/lti/authorize_redirect",
-    "auth_token_url": "https://canvas.beta.instructure.com/login/oauth2/token",
-    "key_set_url": "https://canvas.beta.instructure.com/api/lti/security/jwks",
-
-    "key_set": null,
-
-    "private_key_file": "private.key",
-
-    "public_key_file": "public.key",
-
-    "deployment_ids": ["15087:d5c06b5e5eaf59640d07356a48db053a7c1e6b81"]
-}],
-"https://canvas.instructure.com": [{
-    "client_id": "",
-
-    "auth_login_url": "https://canvas.instructure.com/api/lti/authorize_redirect",
-    "auth_token_url": "https://canvas.instructure.com/login/oauth2/token",
-    "key_set_url": "https://canvas.instructure.com/api/lti/security/jwks",
-
-    "key_set": null,
-
-    "private_key_file": "private.key",
-
-    "public_key_file": "public.key",
-
-    "deployment_ids": [""]
-}]
+    "http://canvas.docker:8081": [
+        {
+            "default": true,
+            "client_id": "10000000000003",
+            "auth_login_url": "http://canvas.docker:8081/api/lti/authorize_redirect",
+            "auth_token_url": "http://canvas.docker:8081/login/oauth2/token",
+            "key_set_url": "http://canvas.docker:8081/api/lti/security/jwks",
+            "key_set": null,
+            "private_key_file": "private.key",
+            "public_key_file": "public.key",
+            "deployment_ids": [
+                "1:8865aa05b4b79b64a91a86042e43af5ea8ae79eb"
+            ]
+        }
+    ],
+    "https://canvas.instructure.com": [
+        {
+            "client_id": "10000000000003",
+            "auth_login_url": "https://canvas.instructure.com/api/lti/authorize_redirect",
+            "auth_token_url": "https://canvas.instructure.com/login/oauth2/token",
+            "key_set_url": "https://canvas.instructure.com/api/lti/security/jwks",
+            "key_set": null,
+            "private_key_file": "private.key",
+            "public_key_file": "public.key",
+            "deployment_ids": [
+                "1:8865aa05b4b79b64a91a86042e43af5ea8ae79eb"
+            ]
+        }
+    ],
+    "https://canvas.beta.instructure.com": [
+        {
+            "client_id": "115900000000000282",
+            "auth_login_url": "https://canvas.beta.instructure.com/api/lti/authorize_redirect",
+            "auth_token_url": "https://canvas.beta.instructure.com/login/oauth2/token",
+            "key_set_url": "https://canvas.beta.instructure.com/api/lti/security/jwks",
+            "key_set": null,
+            "private_key_file": "private.key",
+            "public_key_file": "public.key",
+            "deployment_ids": [
+                "15636:d5c06b5e5eaf59640d07356a48db053a7c1e6b81"
+            ]
+        }
+    ]
 }

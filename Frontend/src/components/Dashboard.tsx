@@ -14,17 +14,19 @@ import api from "@/api";
 import { FileUpload } from "./FileUpload";
 import { toast } from "sonner";
 import { useTheme } from "./ui/theme-provider";
+import { Input } from "./ui/input";
 
 const Dashboard = () => {
   const [conversionStatus, setConversionStatus] = useState<'idle' | 'processing' | 'complete' | 'error'>('idle');
   const [progress, setProgress] = useState(0);
   const [quizContent, setQuizContent] = useState("");
+  const [quizTitle, setQuizTitle] = useState("");
   const [showPreview, setShowPreview] = useState(false);
   const [previewData, setPreviewData] = useState<any[]>([]);
-  const [exportType, setExportType] = useState<'qti' | 'canvas'>('qti');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const { theme, setTheme } = useTheme();
+  const inCanvas = (window as any).CANVAS_COURSE_ID;
 
   const errorCount = previewData.filter((q) => q.type === 'error').length;
 
@@ -49,11 +51,9 @@ const Dashboard = () => {
     return response?.data?.questions ?? [];
   };
 
-  const handleConvert = async (type: 'qti' | 'canvas') => {
-    setExportType(type);
+  const handleConvert = async () => {
     setConversionStatus('processing');
     setProgress(0);
-    console.log(quizContent)
 
     if (quizContent && selectedFile) {
       toast.error("Please provide either quiz content or a file, not both.");
@@ -70,6 +70,7 @@ const Dashboard = () => {
           (async () => {
             const parsed = await parseQuestions(quizContent ? quizContent : null, selectedFile ? selectedFile : null);
             setPreviewData(parsed);
+            toast.success("Questions parsed successfully!");
             setShowPreview(true);
           })();
           return 100;
@@ -79,31 +80,119 @@ const Dashboard = () => {
     }, 200);
   };
 
-  const handleFinalExport = () => {
-    setShowPreview(false);
-    console.log(`Exporting ${previewData.length} questions as ${exportType}`);
-    if (exportType === 'qti') {
-      (async () => {
-        let response;
-        if (selectedFile) {
-          const formData = new FormData();
-          formData.append('file', selectedFile);
-          response = await api.post('/download', formData, { responseType: 'blob' });
-        }
-        else if (quizContent) {
-          response = await api.post('/download', { quiz_text: quizContent }, { responseType: 'blob' });
-        }
-        const blob = new Blob([response?.data], { type: 'application/zip' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'quiz_package.zip';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      })();
-    }
+  const handleFinalExport = (type: 'qti' | 'canvas') => {
 
+    setShowPreview(false);
+    console.log(`Exporting ${previewData.length} questions as ${type}`);
+
+    (async () => {
+      try {
+        if (type === 'qti') {
+          let response;
+          if (selectedFile) {
+            const formData = new FormData();
+            formData.append('quiz_title', quizTitle);
+            formData.append('file', selectedFile);
+            response = await api.post('/download', formData, { responseType: 'blob' });
+          } else if (quizContent) {
+            response = await api.post('/download', { quiz_title: quizTitle, quiz_text: quizContent }, { responseType: 'blob' });
+          }
+          const blob = new Blob([response?.data], { type: 'application/zip' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${quizTitle}.zip`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          toast.success("QTI Package Downloaded!");
+
+        } else if (type === 'canvas') {
+          setConversionStatus('processing');
+          setProgress(10);
+
+          // The Canvas API token is kept server-side; only the course ID is read from the page
+          const courseId = (window as any).CANVAS_COURSE_ID;
+
+          let response;
+          try {
+            if (selectedFile) {
+              // TODO: if you want to support file uploads directly to canvas, 
+              // the /api/canvas endpoint needs to support multipart/form-data. 
+              // Currently it only expects JSON `quiz_text`. 
+              // For now we will just use the text content.
+              toast.error("File upload to Canvas directly is not yet supported. Please paste the text.");
+              setConversionStatus('error');
+              return;
+            } else if (quizContent) {
+              response = await api.post('/canvas', {
+                quiz_title: quizTitle,
+                quiz_text: quizContent,
+                course_id: courseId,
+              });
+            }
+          } catch (error: any) {
+            if (error.response && error.response.status === 401) {
+              // This shouldn't happen if the LTI launch always triggers OAuth first.
+              // Show an error prompting the user to relaunch.
+              toast.error("Not authorized. Please close and relaunch the tool from Canvas.");
+              setConversionStatus('error');
+              return;
+            }
+            throw error; // Re-throw if it wasn't a 401
+          }
+
+          const progressUrl = response?.data?.progress_url;
+          if (!progressUrl) {
+            throw new Error("No progress URL returned from Canvas");
+          }
+
+          toast.success("Upload initiated! Processing...");
+          setProgress(30);
+
+          // Poll the progress — token is handled server-side, max 60 attempts (~2 min)
+          const MAX_POLL_ATTEMPTS = 60;
+          let pollAttempts = 0;
+          let isComplete = false;
+          while (!isComplete && pollAttempts < MAX_POLL_ATTEMPTS) {
+            pollAttempts++;
+            // We poll via our proxy to avoid CORS; no token in the query string
+            const pollRes = await api.get(`/proxy/progress?url=${encodeURIComponent(progressUrl)}`);
+            const state = pollRes.data.workflow_state;
+            const rawCompletion = pollRes.data.completion;
+            const completion = typeof rawCompletion === 'number' && rawCompletion >= 0 && rawCompletion <= 100
+              ? rawCompletion
+              : 0;
+
+            setProgress(30 + (completion * 0.7)); // Scale 0-100 to 30-100%
+
+            if (state === 'completed' || state === 'failed') {
+              isComplete = true;
+              if (state === 'failed') {
+                setConversionStatus('error');
+                toast.error("Canvas failed to process the QTI package.");
+              } else {
+                setConversionStatus('complete');
+                setProgress(100);
+                toast.success("Quiz Successfully Uploaded to Canvas!");
+              }
+            } else {
+              // wait 2 seconds before polling again
+              await new Promise(r => setTimeout(r, 2000));
+            }
+          }
+
+          if (!isComplete) {
+            setConversionStatus('error');
+            toast.error("Canvas upload timed out. Please check Canvas directly.");
+          }
+        }
+      } catch (err: any) {
+        console.error("Export Error:", err);
+        setConversionStatus('error');
+        toast.error(`Export failed: ${err.response?.data?.error || err.message}`);
+      }
+    })();
   };
 
   const getStatusIcon = () => {
@@ -143,7 +232,7 @@ const Dashboard = () => {
               Canvas LTI Tool
             </Badge>
             <Button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} variant="ghost">
-              {theme === 'dark' ? <Sun className='w-4 h-4' /> : <Moon className="w-4 h-4" /> }</Button>
+              {theme === 'dark' ? <Sun className='w-4 h-4' /> : <Moon className="w-4 h-4" />}</Button>
           </div>
         </div>
       </header>
@@ -165,9 +254,9 @@ const Dashboard = () => {
               <CardContent className="space-y-4">
                 {/* File Upload Component */}
                 <FileUpload onSubmit={handleFileUpload} />
-                
+
                 <Separator />
-                
+
                 <div className="space-y-3">
                   <label htmlFor="quiz-content" className="text-sm font-medium">
                     Paste quiz content directly:
@@ -191,24 +280,21 @@ const Dashboard = () => {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Button 
-                    onClick={() => handleConvert('qti')}
-                    disabled={(!quizContent.trim() && !selectedFile) || conversionStatus === 'processing'}
+                  <Input
+                    id="quiz-title"
+                    placeholder="Quiz Title (required)"
+                    required
+                    value={quizTitle}
+                    onChange={(e) => setQuizTitle(e.target.value)}
+                  />
+                  <Button
+                    onClick={() => handleConvert()}
+                    disabled={(!quizContent.trim() && !selectedFile) || !quizTitle.trim() || conversionStatus === 'processing'}
                     variant="outline"
                     className="bg-gradient-primary hover:shadow-glow transition-all duration-300 col-span-1 md:col-span-2"
                   >
-                    Preview and Export to QTI ZIP
+                    Check Syntax and Preview
                   </Button>
-                  {/*
-                  <Button 
-                    onClick={() => handleConvert('canvas')}
-                    disabled={(!quizContent.trim() && !selectedFile) || conversionStatus === 'processing' true } // Disable Canvas export for now
-                    variant="outline"
-                    className="border-primary text-primary hover:bg-primary hover:text-primary-foreground"
-                  >
-                    Export to Canvas Quiz (Coming Soon)
-                  </Button>
-                  */} 
                 </div>
               </CardContent>
             </Card>
@@ -216,109 +302,133 @@ const Dashboard = () => {
 
           {/* Status & Output Section */}
           <div className="space-y-6">
-            
+
 
             {/* Formatting Instructions */}
             <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
               <Card className="shadow-card">
                 <CollapsibleTrigger asChild>
-                <CardHeader> 
-                  <CardTitle className="flex items-center justify-between w-full">
-                    Formatting Instructions 
-                    {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                  </CardTitle>
-                  <CardDescription>
-                    Format your questions according to these guidelines for automatic type detection
-                    <Separator className="my-2"/>
-                    Use the button below to download a detailed guide. Pair it with your preferred AI tool to format large sets of questions quickly.
-                  </CardDescription>
-                  <CardFooter>
-                    <Button 
-                      variant="outline" 
-                      className="w-full my-2" 
-                      asChild
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <a href="/api/instructions" download>Download Full Formatting Guide</a>
-                    </Button>
-                  </CardFooter>
-                </CardHeader>
-              </CollapsibleTrigger>
+                  <CardHeader>
+                    <CardTitle className="flex items-center justify-between w-full">
+                      Formatting Instructions
+                      {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                    </CardTitle>
+                    <CardDescription>
+                      Follow these guidelines for automatic type detection. 
+                      <div className="mt-2 p-2 bg-amber-500/10 border border-amber-500/20 rounded-md text-amber-600 dark:text-amber-400 font-medium text-xs">
+                        ⚠️ IMPORTANT: You must leave at least one blank line between each question block.
+                      </div>
+                      <Separator className="my-2" />
+                      Our parser also natively supports the standard <b>Respondus Legacy Format</b> (Type: MC, MR, F, etc.).
+                    </CardDescription>
+                    <CardFooter>
+                      <Button
+                        variant="outline"
+                        className="w-full my-2"
+                        asChild
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <a href="/api/instructions" download>Download Detailed PDF Guide</a>
+                      </Button>
+                    </CardFooter>
+                  </CardHeader>
+                </CollapsibleTrigger>
                 <CollapsibleContent>
-                <CardContent>
-                  <Accordion type="single" collapsible className="w-full">
-                    <AccordionItem value="mc">
-                      <AccordionTrigger>Multiple Choice</AccordionTrigger>
-                      <AccordionContent>
-                        <div className="space-y-2 text-sm pt-1 pb-3">
-                          <p className="text-foreground">List options with A) B) C) D) and indicate the correct answer:</p>
-                          <div className="bg-muted/30 p-3 rounded-lg">
-                            <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`What is 2+2?
+                  <CardContent>
+                    <h3 className="text-sm font-semibold mb-3 px-1 text-primary">Simplified Core Format</h3>
+                    <Accordion type="single" collapsible className="w-full">
+                      <AccordionItem value="mc">
+                        <AccordionTrigger>Multiple Choice / Answers</AccordionTrigger>
+                        <AccordionContent>
+                          <div className="space-y-4 text-sm pt-1 pb-3">
+                            <div>
+                              <p className="text-foreground font-medium">Multiple Choice (Single Answer):</p>
+                              <div className="bg-muted/30 p-3 rounded-lg mt-1">
+                                <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`What is 2+2?
   A) 3
   B) 4
   C) 5
-  D) 6
   Answer: B`}</pre>
+                              </div>
+                            </div>
+                            <div>
+                              <p className="text-foreground font-medium">Multiple Answers (Multi-Select):</p>
+                              <p className="text-muted-foreground text-xs mb-1">List multiple letters (A, B) or mark each with *</p>
+                              <div className="bg-muted/30 p-3 rounded-lg">
+                                <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`Select the even numbers:
+*A) 2
+ B) 3
+*C) 4
+Answer: A, C`}</pre>
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      </AccordionContent>
-                    </AccordionItem>
+                        </AccordionContent>
+                      </AccordionItem>
 
-                    <AccordionItem value="tf" >
-                      <AccordionTrigger >True/False</AccordionTrigger>
-                      <AccordionContent>
-                        <div className="space-y-2 text-sm pt-1 pb-3">
-                          <p className="text-foreground">Start with "TF:" or end question with (T/F):</p>
-                          <div className="bg-muted/30 p-3 rounded-lg">
-                            <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`TF: The Earth is round.
+                      <AccordionItem value="tf" >
+                        <AccordionTrigger >True/False</AccordionTrigger>
+                        <AccordionContent>
+                          <div className="space-y-2 text-sm pt-1 pb-3">
+                            <p className="text-foreground">Start with "TF:" or end question with (T/F):</p>
+                            <div className="bg-muted/30 p-3 rounded-lg">
+                              <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`TF: The Earth is round.
   Answer: True`}</pre>
+                            </div>
                           </div>
-                        </div>
-                      </AccordionContent>
-                    </AccordionItem>
+                        </AccordionContent>
+                      </AccordionItem>
 
-                    <AccordionItem value="sa">
-                      <AccordionTrigger >Short Answer</AccordionTrigger>
-                      <AccordionContent>
-                        <div className="space-y-2 text-sm pt-1 pb-3">
-                          <p className="text-foreground">Start with "SA:" or end with [Short Answer]:</p>
-                          <div className="bg-muted/30 p-3 rounded-lg">
-                            <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`SA: What year did WWII end?
-  Answer: 1945`}</pre>
+                      <AccordionItem value="sa">
+                        <AccordionTrigger >Short Answer</AccordionTrigger>
+                        <AccordionContent>
+                          <div className="space-y-2 text-sm pt-1 pb-3">
+                            <p className="text-foreground font-medium">Standard Style:</p>
+                            <div className="bg-muted/30 p-3 rounded-lg">
+                              <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`What year did WWII end?
+Answer: 1945`}</pre>
+                            </div>
                           </div>
-                        </div>
-                      </AccordionContent>
-                    </AccordionItem>
+                        </AccordionContent>
+                      </AccordionItem>
 
-                    <AccordionItem value="essay" >
-                      <AccordionTrigger >Essay Questions</AccordionTrigger>
-                      <AccordionContent>
-                        <div className="space-y-2 text-sm pt-1 pb-3">
-                          <p className="text-foreground">Start with "Essay:" or end with [Essay]:</p>
-                          <div className="bg-muted/30 p-3 rounded-lg">
-                            <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`Essay: Explain the causes of World War I.
-  Points: 10`}</pre>
+                      <AccordionItem value="essay" >
+                        <AccordionTrigger >Essay Questions</AccordionTrigger>
+                        <AccordionContent>
+                          <div className="space-y-2 text-sm pt-1 pb-3">
+                            <p className="text-foreground font-medium">Standard Style:</p>
+                            <div className="bg-muted/30 p-3 rounded-lg">
+                              <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`Essay: Explain the causes of World War I.
+Points: 10`}</pre>
+                            </div>
                           </div>
-                        </div>
-                      </AccordionContent>
-                    </AccordionItem>
+                        </AccordionContent>
+                      </AccordionItem>
 
-                    <AccordionItem value="fitb" >
-                      <AccordionTrigger >Fill in the Blank</AccordionTrigger>
-                      <AccordionContent>
-                        <div className="space-y-2 text-sm pt-1 pb-3">
-                          <p className="text-foreground">Use _____ for blanks:</p>
-                          <div className="bg-muted/30 p-3 rounded-lg">
-                            <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`The capital of France is _____.
-  Answer: Paris`}</pre>
+                      <AccordionItem value="fmb" >
+                        <AccordionTrigger >Multiple Blanks (FMB)</AccordionTrigger>
+                        <AccordionContent>
+                          <div className="space-y-4 text-sm pt-1 pb-3">
+                            <div>
+                              <p className="text-foreground font-medium">Auto-Blank Style (Easiest):</p>
+                              <div className="bg-muted/30 p-3 rounded-lg mt-1">
+                                <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`The capital of [France] is [Paris].`}</pre>
+                              </div>
+                            </div>
+                            <div>
+                              <p className="text-foreground font-medium">Mapped Style (For Synonyms):</p>
+                              <div className="bg-muted/30 p-3 rounded-lg mt-1">
+                                <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{`The [color] jumped over the [animal].
+Answers: color: red, animal: dog`}</pre>
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      </AccordionContent>
-                    </AccordionItem>
-                  </Accordion>
+                        </AccordionContent>
+                      </AccordionItem>
+                    </Accordion>
 
-                  <p className="text-sm text-muted-foreground">Points can be specified anywhere in the question, e.g., "(5 pts)", "(10 points)", or "Points: 5".</p>
-                </CardContent>
+                    <p className="text-sm text-muted-foreground">Points can be specified anywhere in the question, e.g., "(5 pts)", "(10 points)", or "Points: 5".</p>
+                  </CardContent>
                 </CollapsibleContent>
               </Card>
             </Collapsible>
@@ -349,9 +459,9 @@ const Dashboard = () => {
 
                 {conversionStatus === 'complete' && (
                   <div className="space-y-3">
-                    <Button 
+                    <Button
                       onClick={() => setShowPreview(true)}
-                      variant="default" 
+                      variant="default"
                       className="w-full bg-gradient-accent"
                     >
                       <Eye className="w-4 h-4 mr-2" />
@@ -372,13 +482,13 @@ const Dashboard = () => {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Eye className="w-5 h-5" />
-              Preview Questions ({previewData.length} questions{errorCount > 0 && <span className="text-destructive">, {errorCount} errors</span>})
+              Preview {quizTitle ? quizTitle : "Quiz"} ( {previewData.length} question{previewData.length > 1 ? "s" : ""}{errorCount > 0 && <span className="text-destructive">, {errorCount} error{errorCount > 1 ? "s" : ""}</span>})
             </DialogTitle>
             <DialogDescription>
-              Review your converted questions before exporting to {exportType.toUpperCase()}
+              Review your converted questions before exporting to preferred platform.
             </DialogDescription>
           </DialogHeader>
-          
+
           <ScrollArea className="h-[50vh] pr-4">
             <div className="space-y-4">
               {previewData.map((question, index) => (
@@ -406,23 +516,40 @@ const Dashboard = () => {
                     {/* Render answers if present */}
                     {Array.isArray(question.answers) && question.answers.length > 1 && (
                       <div className="space-y-1">
-                        {question.answers.map((ans: any, optIndex: number) => (
-                          <div
-                            key={optIndex}
-                            className={`p-2 rounded text-sm ${
-                              ans.id === question.correct_answer_id
+                        {question.answers.map((ans: any, optIndex: number) => {
+                          const isCorrect = ans.id === question.correct_answer_id || 
+                                          (question.correct_answer_ids && question.correct_answer_ids.includes(ans.id));
+                          return (
+                            <div
+                              key={optIndex}
+                              className={`p-2 rounded text-sm ${isCorrect
                                 ? 'bg-green-400/10 border border-green-400/50'
                                 : 'bg-muted/30'
-                            }`}
-                          >
-                            {ans.text}
-                          </div>
-                        ))}
+                                }`}
+                            >
+                              {ans.text}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* FMB variables */}
+                    {question.variables && (
+                      <div className="space-y-2 mt-2">
+                        <p className="text-sm font-medium text-primary">Variable Mappings:</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {Object.entries(question.variables).map(([key, vals]: [string, any]) => (
+                            <div key={key} className="p-2 bg-muted/30 rounded text-xs">
+                              <span className="font-bold">[{key}]:</span> {Array.isArray(vals) ? vals.join(", ") : vals}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
 
                     {/* Fallback for single answer */}
-                    {question.answers && (
+                    {question.answers && !question.variables && question.answers.length === 1 && (
                       <div className="text-sm">
                         <span className="font-medium text-primary">Answer: </span>
                         <span className="text-muted-foreground">
@@ -439,7 +566,7 @@ const Dashboard = () => {
               ))}
             </div>
           </ScrollArea>
-          
+
           <DialogFooter className="flex gap-3">
             <Button
               variant="outline"
@@ -450,12 +577,21 @@ const Dashboard = () => {
               Cancel
             </Button>
             <Button
-              onClick={handleFinalExport}
+              onClick={() => handleFinalExport('qti')}
               className="bg-gradient-primary hover:shadow-glow flex items-center gap-2"
+              disabled={errorCount > 0}
             >
               <Download className="w-4 h-4" />
-              Export {exportType.toUpperCase()}
+              Export QTI
             </Button>
+            {inCanvas && <Button
+              onClick={() => handleFinalExport('canvas')}
+              className="bg-gradient-primary hover:shadow-glow flex items-center gap-2"
+              disabled={errorCount > 0}
+            >
+              <Download className="w-4 h-4" />
+              Export Canvas
+            </Button>}
           </DialogFooter>
         </DialogContent>
       </Dialog>
