@@ -159,6 +159,8 @@ def _create_fmb_item(section, question):
     for idx, (var, text_list) in enumerate(question['variables'].items()):
         var_to_ident[var] = _safe_var_ident(var, idx)
         for text in text_list:
+            if not text: # Skip empty answers
+                continue
             ans_id = str(id_counter)
             id_counter += 1
             var_to_id_map[(var, text)] = ans_id
@@ -182,7 +184,9 @@ def _create_fmb_item(section, question):
         
         render_choice = ET.SubElement(response_lid, 'render_choice')
         for text in text_list:
-            ans_id = var_to_id_map[(var, text)]
+            ans_id = var_to_id_map.get((var, text))
+            if not ans_id:
+                continue
             resp_label = ET.SubElement(render_choice, 'response_label', {'ident': ans_id})
             ans_mat = ET.SubElement(resp_label, 'material')
             ET.SubElement(ans_mat, 'mattext', {'texttype': 'text/plain'}).text = text
@@ -208,8 +212,12 @@ def _create_fmb_item(section, question):
                 ans_id = var_to_id_map[(var, text)]
                 ET.SubElement(or_node, 'varequal', {'respident': var_ident}).text = ans_id
         else:
-            ans_id = var_to_id_map[(var, text_list[0])]
-            ET.SubElement(conditionvar, 'varequal', {'respident': var_ident}).text = ans_id
+            if not text_list:
+                # Should not happen with new parser validation, but safe-guard
+                continue
+            ans_id = var_to_id_map.get((var, text_list[0]))
+            if ans_id:
+                ET.SubElement(conditionvar, 'varequal', {'respident': var_ident}).text = ans_id
             
         ET.SubElement(respcondition, 'setvar', {'action': 'Add', 'varname': 'SCORE'}).text = f"{points_per_blank:.2f}"
 

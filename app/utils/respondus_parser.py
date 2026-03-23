@@ -171,15 +171,23 @@ def parse_respondus_fmb(lines, i, points):
     if not variables:
         return {"id": f"error_{i}", "type": "error", "question_text": question_text, "error": "No bracketed variables found in FMB question (e.g. [color])."}
     
-    # Build answers structure
-    answers = {} # key -> list of strings
+    # Build answers structure and validate
+    answers = {}
+    missing_vars = []
     for var in variables:
         v_lower = var.lower()
         if v_lower in answer_map:
             answers[var] = answer_map[v_lower]
         else:
-            # Fallback if they didn't provide a mapping, use an empty list or error
-            answers[var] = []
+            missing_vars.append(var)
+
+    if missing_vars:
+        return {
+            "id": f"error_{i}",
+            "type": "error",
+            "question_text": question_text,
+            "error": f"Missing definitions for bracketed variables: {', '.join(missing_vars)}. Each variable like [blank] must have a matching 'blank = answer' line."
+        }
 
     return {
         "id": f"q{i}",
