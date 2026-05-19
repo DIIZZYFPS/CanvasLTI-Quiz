@@ -17,10 +17,15 @@ def create_app():
     if not os.path.exists(SESSION_DIR):
         os.makedirs(SESSION_DIR, exist_ok=True)
 
+    CACHE_DIR = os.getenv('CACHE_DIR', '/tmp/flask_cache')
+    if not os.path.exists(CACHE_DIR):
+        os.makedirs(CACHE_DIR, exist_ok=True)
+
     app.config.from_mapping({
         "DEBUG": False,
         "ENV": "production",
-        "CACHE_TYPE": "SimpleCache",
+        "CACHE_TYPE": "FileSystemCache",
+        "CACHE_DIR": CACHE_DIR,
         "CACHE_DEFAULT_TIMEOUT": 600,
         "SECRET_KEY": os.getenv("SECRET_KEY", "replace-me-in-production"),
         "SESSION_TYPE": "filesystem",
