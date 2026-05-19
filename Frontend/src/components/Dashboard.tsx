@@ -26,7 +26,14 @@ const Dashboard = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const { theme, setTheme } = useTheme();
-  const inCanvas = (window as any).CANVAS_COURSE_ID;
+  // Read Course ID from window global, fallback to sessionStorage
+  const courseId = (window as any).CANVAS_COURSE_ID || sessionStorage.getItem('canvas_course_id') || "";
+  const inCanvas = !!courseId;
+
+  // Persist course ID if we received it from window global
+  if ((window as any).CANVAS_COURSE_ID) {
+    sessionStorage.setItem('canvas_course_id', (window as any).CANVAS_COURSE_ID);
+  }
 
   const errorCount = previewData.filter((q) => q.type === 'error').length;
 
@@ -112,7 +119,6 @@ const Dashboard = () => {
           setProgress(10);
 
           // The Canvas API token is kept server-side; only the course ID is read from the page
-          const courseId = (window as any).CANVAS_COURSE_ID;
 
           let response;
           try {
@@ -236,7 +242,7 @@ const Dashboard = () => {
                 </span>
                 <span>Canvas Connected</span>
                 <span className="w-1 h-1 rounded-full bg-emerald-600/30 dark:bg-emerald-400/30" />
-                <span className="opacity-95 font-mono">Course ID: {inCanvas}</span>
+                <span className="opacity-95 font-mono">Course ID: {courseId}</span>
               </div>
             ) : (
               <div className="flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-full text-xs font-medium text-amber-600 dark:text-amber-400">

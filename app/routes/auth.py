@@ -2,7 +2,7 @@ from flask import Blueprint, request, redirect, session, jsonify
 import requests
 import urllib.parse
 import os
-from ..utils.render_utils import _render_with_globals
+from ..utils.render_utils import _render_with_globals, clean_course_id
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -19,7 +19,7 @@ def auth_canvas():
         ), 500
     
     # Recover course_id from query parameters or session
-    course_id = request.args.get('course_id') or session.get('canvas_course_id', '')
+    course_id = clean_course_id(request.args.get('course_id') or session.get('canvas_course_id', ''))
 
     # These are the REST scopes that the LTI Key cannot have
     scopes = [
@@ -49,7 +49,7 @@ def auth_callback():
 
     code = request.args.get('code')
     # Recover course_id from OAuth state param — session may not have survived the round-trip
-    course_id = request.args.get('state') or session.get('canvas_course_id', '')
+    course_id = clean_course_id(request.args.get('state') or session.get('canvas_course_id', ''))
     
     if not code:
         return "Missing authorization code", 400
@@ -83,5 +83,5 @@ def auth_callback():
 
 @auth_bp.route('/launch_success')
 def launch_success():
-    course_id = request.args.get('course_id') or session.get('canvas_course_id', '')
+    course_id = clean_course_id(request.args.get('course_id') or session.get('canvas_course_id', ''))
     return _render_with_globals('index.html', course_id, session.get('canvas_api_token'))

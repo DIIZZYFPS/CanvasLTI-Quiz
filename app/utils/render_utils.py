@@ -1,10 +1,19 @@
 from flask import render_template
 from .vite_manifest import get_vite_assets
 
+def clean_course_id(cid):
+    if not cid:
+        return ''
+    cid_str = str(cid).strip().lower()
+    if cid_str in ('none', 'null', 'false', 'undefined', ''):
+        return ''
+    return str(cid).strip()
+
 def _render_with_globals(template, course_id, api_token):
     """Renders a template and injects CANVAS_COURSE_ID as a window global.
     The API token is intentionally kept server-side only and never sent to the client.
     """
+    course_id = clean_course_id(course_id)
     vite_js_asset, vite_css_asset = get_vite_assets()
     html = render_template(
         template,

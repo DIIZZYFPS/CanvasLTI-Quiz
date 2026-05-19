@@ -2,7 +2,7 @@ from flask import Blueprint, request, redirect, session, jsonify
 from pylti1p3.contrib.flask import FlaskOIDCLogin, FlaskRequest, FlaskMessageLaunch
 from pylti1p3.tool_config import ToolConfJsonFile
 from ..utils.lti_utils import get_lti_config_path, get_launch_data_storage, ExtendedFlaskMessageLaunch
-from ..utils.render_utils import _render_with_globals
+from ..utils.render_utils import _render_with_globals, clean_course_id
 
 lti_bp = Blueprint('lti', __name__)
 
@@ -24,13 +24,45 @@ def launch():
     tool_conf = ToolConfJsonFile(get_lti_config_path())
     flask_request = FlaskRequest()
     launch_data_storage = get_launch_data_storage()
-
     message_launch = ExtendedFlaskMessageLaunch(request=flask_request, tool_config=tool_conf, launch_data_storage=launch_data_storage)
     launch_data = message_launch.get_launch_data()
+
+    # Debug: dump raw launch data to inspect claims in stdout/stderr
+    try:
+        import sys
+        print("--- LTI LAUNCH DEBUG START ---", file=sys.stderr)
+        print(f"LTI Launch Claims Keys: {list(launch_data.keys())}", file=sys.stderr)
+        custom_params = launch_data.get('https://purl.imsglobal.org/spec/lti/claim/custom', {})
+        print(f"LTI Custom Params: {custom_params}", file=sys.stderr)
+        context_claim = launch_data.get('https://purl.imsglobal.org/spec/lti/claim/context', {})
+        print(f"LTI Context Claim: {context_claim}", file=sys.stderr)
+        print("--- LTI LAUNCH DEBUG END ---", file=sys.stderr)
+        
+        # Also write to local file for convenience if writable
+        import json
+        with open('app/launch_debug.json', 'w') as f:
+            json.dump(launch_data, f, indent=2)
+    except Exception as e:
+        print("LTI debug logging note:", e, file=sys.stderr)
     
-    # 1. Capture the Course ID from the LTI Launch Claim
+    # 1. Capture the Course ID from the LTI Launch Claim with robust fallbacks
     custom_params = launch_data.get('https://purl.imsglobal.org/spec/lti/claim/custom', {})
-    course_id = str(custom_params.get('canvas_course_id', ''))
+    
+    # Try different potential keys for course ID
+    course_id = (
+        custom_params.get('canvas_course_id') or 
+        custom_params.get('course_id') or 
+        custom_params.get('custom_canvas_course_id') or 
+        custom_params.get('custom_course_id')
+    )
+    
+    # If not found in custom params, try context claim ID as a last resort fallback
+    if not course_id:
+        context_claim = launch_data.get('https://purl.imsglobal.org/spec/lti/claim/context', {})
+        course_id = context_claim.get('id')
+        
+    course_id = clean_course_id(course_id)
+    print(f"Extracted course_id: '{course_id}'", file=sys.stderr)
     
     # 2. Persist state in session
     session['canvas_course_id'] = course_id
