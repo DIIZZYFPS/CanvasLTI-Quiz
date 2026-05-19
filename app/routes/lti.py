@@ -39,8 +39,8 @@ def launch():
     if 'canvas_api_token' not in session:
         return redirect(f'/api/auth/canvas?course_id={course_id}')
 
-    # Token already exists — inject credentials as JS globals and render
-    return _render_with_globals('index.html', course_id, session.get('canvas_api_token'))
+    # Token already exists — redirect to launch_success GET endpoint to prevent nonce reissue on refresh
+    return redirect(f'/launch_success?course_id={course_id}')
 
 @lti_bp.route('/jwks/', methods=['GET'])
 def get_jwks():
