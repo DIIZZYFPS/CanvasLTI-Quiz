@@ -1,7 +1,7 @@
 from flask import Blueprint, request, redirect, session, jsonify
 from pylti1p3.contrib.flask import FlaskOIDCLogin, FlaskRequest, FlaskMessageLaunch
 from pylti1p3.tool_config import ToolConfJsonFile
-from ..utils.lti_utils import get_lti_config_path, get_launch_data_storage
+from ..utils.lti_utils import get_lti_config_path, get_launch_data_storage, ExtendedFlaskMessageLaunch
 from ..utils.render_utils import _render_with_globals
 
 lti_bp = Blueprint('lti', __name__)
@@ -25,7 +25,7 @@ def launch():
     flask_request = FlaskRequest()
     launch_data_storage = get_launch_data_storage()
 
-    message_launch = FlaskMessageLaunch(request=flask_request, tool_config=tool_conf, launch_data_storage=launch_data_storage)
+    message_launch = ExtendedFlaskMessageLaunch(request=flask_request, tool_config=tool_conf, launch_data_storage=launch_data_storage)
     launch_data = message_launch.get_launch_data()
     
     # 1. Capture the Course ID from the LTI Launch Claim
