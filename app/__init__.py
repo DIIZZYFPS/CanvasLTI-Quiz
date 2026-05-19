@@ -27,7 +27,7 @@ def create_app():
         "SESSION_FILE_DIR": SESSION_DIR,
         "SESSION_COOKIE_NAME": "pylti1p3-flask-app-sessionid",
         "SESSION_COOKIE_HTTPONLY": True,
-        "SESSION_COOKIE_SECURE": os.getenv("FLASK_ENV", "production") != "development",
+        "SESSION_COOKIE_SECURE": True,
         "SESSION_COOKIE_SAMESITE": 'None',
         "DEBUG_TB_INTERCEPT_REDIRECTS": False,
         "PERMANENT_SESSION_LIFETIME": timedelta(hours=1)

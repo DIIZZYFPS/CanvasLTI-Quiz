@@ -18,6 +18,9 @@ def auth_canvas():
             "CANVAS_API_CLIENT_ID, and CANVAS_OAUTH_REDIRECT_URI environment variables."
         ), 500
     
+    # Recover course_id from query parameters or session
+    course_id = request.args.get('course_id') or session.get('canvas_course_id', '')
+
     # These are the REST scopes that the LTI Key cannot have
     scopes = [
         'url:POST|/api/v1/courses/:course_id/content_migrations',
@@ -31,7 +34,7 @@ def auth_canvas():
         'response_type': 'code',
         'redirect_uri': API_REDIRECT_URI,
         'scope': ' '.join(scopes),
-        'state': session.get('canvas_course_id', '') # Pass course_id as state for round-trip
+        'state': course_id # Pass course_id as state for round-trip
     }
     
     auth_url = f"{CANVAS_DOMAIN}/login/oauth2/auth?{urllib.parse.urlencode(params)}"

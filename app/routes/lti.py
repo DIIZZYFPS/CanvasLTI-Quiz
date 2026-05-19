@@ -37,7 +37,7 @@ def launch():
     
     # 3. Check for API Token; if missing, start the SECOND OAuth2 flow (API Key)
     if 'canvas_api_token' not in session:
-        return redirect('/api/auth/canvas')
+        return redirect(f'/api/auth/canvas?course_id={course_id}')
 
     # Token already exists — inject credentials as JS globals and render
     return _render_with_globals('index.html', course_id, session.get('canvas_api_token'))
