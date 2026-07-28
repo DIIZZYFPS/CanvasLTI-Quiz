@@ -69,38 +69,38 @@ def download():
 
 @api_bp.route('/canvas', methods=['POST'])
 def canvas():
-    data = request.json
-    
-    # Use course ID from request body if provided, otherwise from session
-    course_id = data.get('course_id') or session.get('canvas_course_id')
-    # Always use the Canvas API token from the server-side session only
-    access_token = session.get('canvas_api_token')
-
-    if not course_id:
-        return jsonify({"error": "Missing Canvas Course ID. Please refresh the tool launch."}), 400
-    if not access_token:
-        # 401 triggers the React frontend to initiate OAuth
-        return jsonify({"error": "Missing Canvas API Token, please authorize"}), 401
-
-    title = _sanitize_filename((data.get("quiz_title") or "").strip())
-    parsed_questions = parse_quiz_text(data.get("quiz_text", ""))
-    qti_package = create_qti_1_2_package(title, parsed_questions)
-
-    # 1. Create a zip file in memory
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-        zip_file.writestr("quiz.qti.xml", qti_package.encode("utf-8"))
-    
-    zip_buffer.seek(0)
-    zip_content = zip_buffer.read()
-    zip_size = len(zip_content)
-
-    CANVAS_DOMAIN = os.getenv('CANVAS_DOMAIN')
-    headers = {
-        "Authorization": f"Bearer {access_token}"
-    }
-
     try:
+        data = request.get_json(silent=True) or {}
+
+        # Use course ID from request body if provided, otherwise from session
+        course_id = data.get('course_id') or session.get('canvas_course_id')
+        # Always use the Canvas API token from the server-side session only
+        access_token = session.get('canvas_api_token')
+
+        if not course_id:
+            return jsonify({"error": "Missing Canvas Course ID. Please refresh the tool launch."}), 400
+        if not access_token:
+            # 401 triggers the React frontend to initiate OAuth
+            return jsonify({"error": "Missing Canvas API Token, please authorize"}), 401
+
+        title = _sanitize_filename((data.get("quiz_title") or "").strip())
+        parsed_questions = parse_quiz_text(data.get("quiz_text", ""))
+        qti_package = create_qti_1_2_package(title, parsed_questions)
+
+        # 1. Create a zip file in memory
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            zip_file.writestr("quiz.qti.xml", qti_package.encode("utf-8"))
+
+        zip_buffer.seek(0)
+        zip_content = zip_buffer.read()
+        zip_size = len(zip_content)
+
+        CANVAS_DOMAIN = os.getenv('CANVAS_DOMAIN')
+        headers = {
+            "Authorization": f"Bearer {access_token}"
+        }
+
         # STEP 1: Initiate Content Migration
         mig_url = f"{CANVAS_DOMAIN}/api/v1/courses/{course_id}/content_migrations"
         mig_payload = {

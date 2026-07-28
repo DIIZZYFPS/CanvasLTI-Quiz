@@ -10,3 +10,6 @@ pylti1p3
 # Doc Parsing Libraries
 PyMuPDF
 python-docx
+
+# Testing
+pytest
