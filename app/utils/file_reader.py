@@ -31,11 +31,8 @@ def read_file(file):
         try:
             import fitz
             file_bytes = file.read()
-            doc = fitz.open(stream=file_bytes, filetype="pdf")
-            text = ""
-            for page in doc:
-                text += page.get_text()
-            return text
+            with fitz.open(stream=file_bytes, filetype="pdf") as doc:
+                return "".join(page.get_text() for page in doc)
         except Exception as e:
             raise ValueError(f"Failed to parse PDF document. File may be corrupted or encrypted: {str(e)}")
 

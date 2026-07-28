@@ -33,7 +33,7 @@ def preview():
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
-        return jsonify({"error": f"Failed to process preview: {str(e)}"}), 500
+        return jsonify({"error": "Failed to process preview"}), 500
 
 @api_bp.route("/download", methods=['POST'])
 def download():

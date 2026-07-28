@@ -16,9 +16,10 @@ export function FileUpload({ onSubmit }: FileUploadProps) {
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
     const validateAndSelectFile = (file: File) => {
-        const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+        const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')).toLowerCase() : '';
         if (!ALLOWED_EXTENSIONS.includes(ext)) {
-            toast.error(`Unsupported file type '${ext}'. Please select a .pdf, .docx, .txt, or .md file.`);
+            const extLabel = ext ? ` '${ext}'` : '';
+            toast.error(`Unsupported file type${extLabel}. Please select a .pdf, .docx, .txt, or .md file.`);
             return false;
         }
         setSelectedFile(file);
