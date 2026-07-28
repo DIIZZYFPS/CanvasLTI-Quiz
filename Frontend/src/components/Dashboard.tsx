@@ -72,13 +72,20 @@ const Dashboard = () => {
       setProgress(prev => {
         if (prev >= 100) {
           clearInterval(interval);
-          setConversionStatus('complete');
           // Parse questions and show preview
           (async () => {
-            const parsed = await parseQuestions(quizContent ? quizContent : null, selectedFile ? selectedFile : null);
-            setPreviewData(parsed);
-            toast.success("Questions parsed successfully!");
-            setShowPreview(true);
+            try {
+              const parsed = await parseQuestions(quizContent ? quizContent : null, selectedFile ? selectedFile : null);
+              setPreviewData(parsed);
+              setConversionStatus('complete');
+              toast.success("Questions parsed successfully!");
+              setShowPreview(true);
+            } catch (err: any) {
+              console.error("Preview Parsing Error:", err);
+              setConversionStatus('error');
+              const errorMessage = err.response?.data?.error || err.message || "Failed to parse document syntax.";
+              toast.error(`Parsing failed: ${errorMessage}`);
+            }
           })();
           return 100;
         }

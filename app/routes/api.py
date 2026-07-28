@@ -18,44 +18,54 @@ def _sanitize_filename(title):
 
 @api_bp.route("/preview", methods=['POST'])
 def preview():
-    if request.content_type.startswith("multipart/form-data"):
-        file = request.files.get("file")
-        if file:
-            content = read_file(file)
-            parsed_questions = parse_quiz_text(content)
+    try:
+        if request.content_type and request.content_type.startswith("multipart/form-data"):
+            file = request.files.get("file")
+            if file:
+                content = read_file(file)
+                parsed_questions = parse_quiz_text(content)
+            else:
+                return jsonify({"error": "No file provided"}), 400
         else:
-            return jsonify({"error": "No file provided"}), 400
-    else:
-        data = request.get_json()
-        parsed_questions = parse_quiz_text(data.get("quiz_text", ""))
-    return jsonify({"questions": parsed_questions})
+            data = request.get_json(silent=True) or {}
+            parsed_questions = parse_quiz_text(data.get("quiz_text", ""))
+        return jsonify({"questions": parsed_questions})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"Failed to process preview: {str(e)}"}), 500
 
 @api_bp.route("/download", methods=['POST'])
 def download():
-    if request.content_type.startswith("multipart/form-data"):
-        title = _sanitize_filename(request.form.get("quiz_title", ""))
-        file = request.files.get("file")
-        if file:
-            content = read_file(file)
-            parsed_questions = parse_quiz_text(content)
+    try:
+        if request.content_type and request.content_type.startswith("multipart/form-data"):
+            title = _sanitize_filename(request.form.get("quiz_title", ""))
+            file = request.files.get("file")
+            if file:
+                content = read_file(file)
+                parsed_questions = parse_quiz_text(content)
+            else:
+                return jsonify({"error": "No file provided"}), 400
         else:
-            return jsonify({"error": "No file provided"}), 400
-    else:
-        data = request.get_json()
-        title = _sanitize_filename((data.get("quiz_title") or "").strip())
-        parsed_questions = parse_quiz_text(data.get("quiz_text", ""))
-    
-    qti_package = create_qti_1_2_package(title, parsed_questions)
+            data = request.get_json(silent=True) or {}
+            title = _sanitize_filename((data.get("quiz_title") or "").strip())
+            parsed_questions = parse_quiz_text(data.get("quiz_text", ""))
+        
+        qti_package = create_qti_1_2_package(title, parsed_questions)
 
-    # Create a zip file in memory
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-        zip_file.writestr("quiz.qti.xml", qti_package.encode("utf-8"))
+        # Create a zip file in memory
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            zip_file.writestr("quiz.qti.xml", qti_package.encode("utf-8"))
 
-    zip_buffer.seek(0)
-    return Response(zip_buffer.read(), mimetype="application/zip", headers={
-        "Content-Disposition": f'attachment; filename="{title}_package.zip"'
-    })
+        zip_buffer.seek(0)
+        return Response(zip_buffer.read(), mimetype="application/zip", headers={
+            "Content-Disposition": f'attachment; filename="{title}_package.zip"'
+        })
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"Failed to generate download package: {str(e)}"}), 500
 
 @api_bp.route('/canvas', methods=['POST'])
 def canvas():
