@@ -373,6 +373,14 @@ def parse_quiz_text(text_input):
                 question_data = _parse_multiple_choice(lines, i)
             elif "answer:" in full_lower and re.search(r'\((T/F|True/False)\)', full_block_text, re.IGNORECASE):
                 question_data = _parse_true_false(lines, i)
+            elif re.search(r'Answer:\s*(True|False|T|F)\s*$', full_block_text, re.IGNORECASE):
+                # Implicit True/False: a plain statement whose "Answer:" value
+                # is exactly True/False, with no TF: prefix or (T/F) hint.
+                question_data = _parse_true_false(lines, i)
+            elif "answer:" in full_lower:
+                # Implicit Short Answer: a plain question ending in "Answer: ..."
+                # with no options, blank, or explicit SA:/[Short Answer] tag.
+                question_data = _parse_short_answer(full_block_text, i)
             else:
                 error_hint = "Format not recognized."
                 if re.search(r'\n[A-Z][\)\.]', "\n"+"\n".join(lines), re.IGNORECASE):

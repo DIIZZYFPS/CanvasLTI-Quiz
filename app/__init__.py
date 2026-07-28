@@ -1,10 +1,13 @@
 import os
+import warnings
 from datetime import timedelta
 from flask import Flask, render_template, send_from_directory
 from flask_caching import Cache
 from dotenv import load_dotenv
 
 load_dotenv()
+
+_DEFAULT_SECRET_KEY = "replace-me-in-production"
 
 # Initialize cache globally so it can be used by other modules via 'from app import cache'
 cache = Cache()
@@ -21,13 +24,22 @@ def create_app():
     if not os.path.exists(CACHE_DIR):
         os.makedirs(CACHE_DIR, exist_ok=True)
 
+    secret_key = os.getenv("SECRET_KEY", _DEFAULT_SECRET_KEY)
+    if secret_key == _DEFAULT_SECRET_KEY:
+        warnings.warn(
+            "SECRET_KEY is not set - falling back to an insecure, publicly known "
+            "default. Sessions can be forged. Set the SECRET_KEY environment "
+            "variable before deploying.",
+            RuntimeWarning,
+        )
+
     app.config.from_mapping({
         "DEBUG": False,
         "ENV": "production",
         "CACHE_TYPE": "FileSystemCache",
         "CACHE_DIR": CACHE_DIR,
         "CACHE_DEFAULT_TIMEOUT": 600,
-        "SECRET_KEY": os.getenv("SECRET_KEY", "replace-me-in-production"),
+        "SECRET_KEY": secret_key,
         "SESSION_TYPE": "filesystem",
         "SESSION_FILE_DIR": SESSION_DIR,
         "SESSION_COOKIE_NAME": "pylti1p3-flask-app-sessionid",

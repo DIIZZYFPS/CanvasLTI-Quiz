@@ -27,24 +27,6 @@ def launch():
     message_launch = ExtendedFlaskMessageLaunch(request=flask_request, tool_config=tool_conf, launch_data_storage=launch_data_storage)
     launch_data = message_launch.get_launch_data()
 
-    # Debug: dump raw launch data to inspect claims in stdout/stderr
-    try:
-        import sys
-        print("--- LTI LAUNCH DEBUG START ---", file=sys.stderr)
-        print(f"LTI Launch Claims Keys: {list(launch_data.keys())}", file=sys.stderr)
-        custom_params = launch_data.get('https://purl.imsglobal.org/spec/lti/claim/custom', {})
-        print(f"LTI Custom Params: {custom_params}", file=sys.stderr)
-        context_claim = launch_data.get('https://purl.imsglobal.org/spec/lti/claim/context', {})
-        print(f"LTI Context Claim: {context_claim}", file=sys.stderr)
-        print("--- LTI LAUNCH DEBUG END ---", file=sys.stderr)
-        
-        # Also write to local file for convenience if writable
-        import json
-        with open('app/launch_debug.json', 'w') as f:
-            json.dump(launch_data, f, indent=2)
-    except Exception as e:
-        print("LTI debug logging note:", e, file=sys.stderr)
-    
     # 1. Capture the Course ID from the LTI Launch Claim with robust fallbacks
     custom_params = launch_data.get('https://purl.imsglobal.org/spec/lti/claim/custom', {})
     
@@ -62,8 +44,7 @@ def launch():
         course_id = context_claim.get('id')
         
     course_id = clean_course_id(course_id)
-    print(f"Extracted course_id: '{course_id}'", file=sys.stderr)
-    
+
     # 2. Persist state in session
     session['canvas_course_id'] = course_id
     

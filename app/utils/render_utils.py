@@ -1,3 +1,4 @@
+import json
 from flask import render_template
 from .vite_manifest import get_vite_assets
 
@@ -23,6 +24,9 @@ def _render_with_globals(template, course_id, api_token):
         vite_css_asset=vite_css_asset,
     )
     if course_id:
-        script = f'<script>window.CANVAS_COURSE_ID = "{course_id}";</script>'
+        # json.dumps both quotes and JS/HTML-escapes the value (e.g. `<`, `"`),
+        # so it can't break out of the string literal or the <script> tag.
+        safe_course_id = json.dumps(course_id).replace('<', '\\u003c').replace('>', '\\u003e')
+        script = f'<script>window.CANVAS_COURSE_ID = {safe_course_id};</script>'
         html = html.replace('<head>', f'<head>{script}')
     return html

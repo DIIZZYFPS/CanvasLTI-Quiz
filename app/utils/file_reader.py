@@ -1,5 +1,6 @@
 import io
 import os
+from .text_utils import join_docx_paragraphs
 
 def read_file(file):
     if not file or not getattr(file, 'filename', None):
@@ -42,8 +43,8 @@ def read_file(file):
             file_bytes = file.read()
             with io.BytesIO(file_bytes) as file_stream:
                 document = Document(file_stream)
-                text = "\n".join([para.text for para in document.paragraphs])
-            return text
+                paragraphs = [para.text for para in document.paragraphs]
+            return join_docx_paragraphs(paragraphs)
         except Exception as e:
             raise ValueError(f"Failed to parse DOCX document. File may be corrupted or invalid: {str(e)}")
 
