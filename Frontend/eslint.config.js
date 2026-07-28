@@ -20,4 +20,14 @@ export default tseslint.config([
       globals: globals.browser,
     },
   },
+  {
+    // Vendored shadcn/ui primitives idiomatically co-export a component
+    // with its variant/hook helpers (e.g. `buttonVariants`, `useTheme`).
+    // That's the upstream pattern, not an app-code bug, so it's exempt
+    // from the fast-refresh-only-exports-components rule here.
+    files: ['src/components/ui/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 ])

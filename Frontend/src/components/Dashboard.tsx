@@ -10,11 +10,21 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { useState } from "react";
 import { Upload, FileText, Download, CheckCircle, Clock, AlertCircle, Eye, X, ChevronDown, ChevronUp, Sun, Moon } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible";
+import axios from "axios";
 import api from "@/api";
 import { FileUpload } from "./FileUpload";
 import { toast } from "sonner";
 import { useTheme } from "./ui/theme-provider";
 import { Input } from "./ui/input";
+import type { Question } from "@/types/quiz";
+
+function getErrorMessage(err: unknown, fallback = "Something went wrong"): string {
+  if (axios.isAxiosError(err)) {
+    return err.response?.data?.error || err.message || fallback;
+  }
+  if (err instanceof Error) return err.message;
+  return fallback;
+}
 
 const Dashboard = () => {
   const [conversionStatus, setConversionStatus] = useState<'idle' | 'processing' | 'complete' | 'error'>('idle');
@@ -22,17 +32,17 @@ const Dashboard = () => {
   const [quizContent, setQuizContent] = useState("");
   const [quizTitle, setQuizTitle] = useState("");
   const [showPreview, setShowPreview] = useState(false);
-  const [previewData, setPreviewData] = useState<any[]>([]);
+  const [previewData, setPreviewData] = useState<Question[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const { theme, setTheme } = useTheme();
   // Read Course ID from window global, fallback to sessionStorage
-  const courseId = (window as any).CANVAS_COURSE_ID || sessionStorage.getItem('canvas_course_id') || "";
+  const courseId = window.CANVAS_COURSE_ID || sessionStorage.getItem('canvas_course_id') || "";
   const inCanvas = !!courseId;
 
   // Persist course ID if we received it from window global
-  if ((window as any).CANVAS_COURSE_ID) {
-    sessionStorage.setItem('canvas_course_id', (window as any).CANVAS_COURSE_ID);
+  if (window.CANVAS_COURSE_ID) {
+    sessionStorage.setItem('canvas_course_id', window.CANVAS_COURSE_ID);
   }
 
   const errorCount = previewData.filter((q) => q.type === 'error').length;
@@ -41,16 +51,16 @@ const Dashboard = () => {
     setSelectedFile(file);
   };
 
-  const parseQuestions = async (content: string | null, file: File | null) => {
+  const parseQuestions = async (content: string | null, file: File | null): Promise<Question[]> => {
     if (!content && !file) return [];
     let response;
 
     if (file) {
       const formData = new FormData();
       formData.append('file', file);
-      response = await api.post('/preview', formData);
+      response = await api.post<{ questions: Question[] }>('/preview', formData);
     } else if (content) {
-      response = await api.post('/preview', { quiz_text: content }, {
+      response = await api.post<{ questions: Question[] }>('/preview', { quiz_text: content }, {
         headers: { 'Content-Type': 'application/json' }
       });
     }
@@ -80,10 +90,10 @@ const Dashboard = () => {
               setConversionStatus('complete');
               toast.success("Questions parsed successfully!");
               setShowPreview(true);
-            } catch (err: any) {
+            } catch (err: unknown) {
               console.error("Preview Parsing Error:", err);
               setConversionStatus('error');
-              const errorMessage = err.response?.data?.error || err.message || "Failed to parse document syntax.";
+              const errorMessage = getErrorMessage(err, "Failed to parse document syntax.");
               toast.error(`Parsing failed: ${errorMessage}`);
             }
           })();
@@ -144,8 +154,8 @@ const Dashboard = () => {
                 course_id: courseId,
               });
             }
-          } catch (error: any) {
-            if (error.response && error.response.status === 401) {
+          } catch (error: unknown) {
+            if (axios.isAxiosError(error) && error.response?.status === 401) {
               // This shouldn't happen if the LTI launch always triggers OAuth first.
               // Show an error prompting the user to relaunch.
               toast.error("Not authorized. Please close and relaunch the tool from Canvas.");
@@ -200,10 +210,10 @@ const Dashboard = () => {
             toast.error("Canvas upload timed out. Please check Canvas directly.");
           }
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("Export Error:", err);
         setConversionStatus('error');
-        toast.error(`Export failed: ${err.response?.data?.error || err.message}`);
+        toast.error(`Export failed: ${getErrorMessage(err)}`);
       }
     })();
   };
@@ -525,7 +535,7 @@ Answers: color: red, animal: dog`}</pre>
                         {index + 1} - {question.type?.replace(/_/g, ' ').toUpperCase()}
                       </Badge>
                       <Badge variant="outline" className="text-xs">
-                        {question.points} {question.points > 1 ? "points" : "point"}
+                        {question.points} {Number(question.points) > 1 ? "points" : "point"}
                       </Badge>
                     </div>
                   </CardHeader>
@@ -542,7 +552,7 @@ Answers: color: red, animal: dog`}</pre>
                     {/* Render answers if present */}
                     {Array.isArray(question.answers) && question.answers.length > 1 && (
                       <div className="space-y-1">
-                        {question.answers.map((ans: any, optIndex: number) => {
+                        {question.answers.map((ans, optIndex: number) => {
                           const isCorrect = ans.id === question.correct_answer_id || 
                                           (question.correct_answer_ids && question.correct_answer_ids.includes(ans.id));
                           return (
@@ -565,7 +575,7 @@ Answers: color: red, animal: dog`}</pre>
                       <div className="space-y-2 mt-2">
                         <p className="text-sm font-medium text-primary">Variable Mappings:</p>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {Object.entries(question.variables).map(([key, vals]: [string, any]) => (
+                          {Object.entries(question.variables).map(([key, vals]) => (
                             <div key={key} className="p-2 bg-muted/30 rounded text-xs">
                               <span className="font-bold">[{key}]:</span> {Array.isArray(vals) ? vals.join(", ") : vals}
                             </div>
@@ -579,11 +589,9 @@ Answers: color: red, animal: dog`}</pre>
                       <div className="text-sm">
                         <span className="font-medium text-primary">Answer: </span>
                         <span className="text-muted-foreground">
-                          {question.correct_answer_id ? (
-                            Array.isArray(question.answers)
-                              ? question.answers.find((ans: any) => ans.id === question.correct_answer_id)?.text
-                              : question.answers?.text
-                          ) : question.answers[0]?.text}
+                          {question.correct_answer_id
+                            ? question.answers.find((ans) => ans.id === question.correct_answer_id)?.text
+                            : question.answers[0]?.text}
                         </span>
                       </div>
                     )}

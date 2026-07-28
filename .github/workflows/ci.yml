@@ -39,15 +39,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "npm"
+          cache-dependency-path: Frontend/package-lock.json
 
       - name: Install dependencies
-        # package-lock.json isn't committed (repo-wide .gitignore rule), so
-        # `npm ci` isn't usable here.
-        run: npm install
+        run: npm ci
 
       - name: Lint
-        # Informational only: pre-existing lint debt shouldn't block CI.
-        continue-on-error: true
         run: npm run lint
 
       - name: Build

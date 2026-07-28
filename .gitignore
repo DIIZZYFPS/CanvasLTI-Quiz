@@ -12,7 +12,6 @@ app/config/private.key
 app/config/public.key
 app/config/config.json
 node_modules/
-package-lock.json
 # Distribution / packaging
 .Python
 build/
