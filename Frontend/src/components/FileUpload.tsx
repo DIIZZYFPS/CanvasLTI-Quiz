@@ -1,21 +1,30 @@
 import { cn } from "@/lib/utils"
-import {useState} from "react"
-import { File, Upload, X } from "lucide-react"
+import { useState } from "react"
+import { File as FileIcon, Upload, X } from "lucide-react"
 import { Button } from "./ui/button";
+import { toast } from "sonner";
 
 interface FileUploadProps {
     onSubmit: (file: File) => void;
 };
+
+const ALLOWED_EXTENSIONS = ['.pdf', '.docx', '.txt', '.md'];
 
 export function FileUpload({ onSubmit }: FileUploadProps) {
 
     const [isDragOver, setIsDragOver] = useState(false);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-
-    const handleFileSelect = (file: File) => {
+    const validateAndSelectFile = (file: File) => {
+        const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')).toLowerCase() : '';
+        if (!ALLOWED_EXTENSIONS.includes(ext)) {
+            const extLabel = ext ? ` '${ext}'` : '';
+            toast.error(`Unsupported file type${extLabel}. Please select a .pdf, .docx, .txt, or .md file.`);
+            return false;
+        }
         setSelectedFile(file);
-         onSubmit(file);
+        onSubmit(file);
+        return true;
     };
 
     const handleDrop = (e: React.DragEvent) => {
@@ -23,7 +32,7 @@ export function FileUpload({ onSubmit }: FileUploadProps) {
         setIsDragOver(false);
         const files = Array.from(e.dataTransfer.files);
         if (files.length > 0) {
-            handleFileSelect(files[0]);
+            validateAndSelectFile(files[0]);
         }
     }
     const handleDragOver = (e: React.DragEvent) => {
@@ -38,7 +47,7 @@ export function FileUpload({ onSubmit }: FileUploadProps) {
     const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
         if (files && files.length > 0) {
-            handleFileSelect(files[0]);
+            validateAndSelectFile(files[0]);
         }
     };
 
@@ -61,7 +70,7 @@ export function FileUpload({ onSubmit }: FileUploadProps) {
       {selectedFile ? (
         <div className="flex items-center justify-between p-4 bg-background rounded-lf">
             <div className="flex items-center gap-3">
-                <File className="h-6 w-6 text-primary" />
+                <FileIcon className="h-6 w-6 text-primary" />
                 <div className="text-left">
                     <p className="font-medium">{selectedFile.name}</p>
                     <p className="text-sm text-muted-foreground">
@@ -86,7 +95,7 @@ export function FileUpload({ onSubmit }: FileUploadProps) {
                     Drag and drop a file here, or
                 </p>
                 <p className="text-sm text-muted-foreground">
-                    click to browse
+                    click to browse (.pdf, .docx, .txt, .md)
                 </p>
             </div>
             <input
@@ -94,7 +103,7 @@ export function FileUpload({ onSubmit }: FileUploadProps) {
                 onChange={handleFileInput}
                 className="hidden"
                 id="file-upload"
-                accept=".pdf,.doc,.docx,.txt,.csv,.xlsx"
+                accept=".pdf,.docx,.txt,.md"
             />
             <label htmlFor="file-upload">
                 <Button variant="outline" className="cursor-pointer" asChild>
