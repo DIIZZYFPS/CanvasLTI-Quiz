@@ -1,4 +1,5 @@
 from flask import Blueprint, request, redirect, session, jsonify
+import urllib.parse
 from pylti1p3.contrib.flask import FlaskOIDCLogin, FlaskRequest, FlaskMessageLaunch
 from pylti1p3.tool_config import ToolConfJsonFile
 from ..utils.lti_utils import get_lti_config_path, get_launch_data_storage, ExtendedFlaskMessageLaunch
@@ -50,10 +51,10 @@ def launch():
     
     # 3. Check for API Token; if missing, start the SECOND OAuth2 flow (API Key)
     if 'canvas_api_token' not in session:
-        return redirect(f'/api/auth/canvas?course_id={course_id}')
+        return redirect('/api/auth/canvas?' + urllib.parse.urlencode({'course_id': course_id}))
 
     # Token already exists — redirect to launch_success GET endpoint to prevent nonce reissue on refresh
-    return redirect(f'/launch_success?course_id={course_id}')
+    return redirect('/launch_success?' + urllib.parse.urlencode({'course_id': course_id}))
 
 @lti_bp.route('/jwks/', methods=['GET'])
 def get_jwks():
