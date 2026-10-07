@@ -46,9 +46,22 @@ const Dashboard = () => {
   }
 
   const errorCount = previewData.filter((q) => q.type === 'error').length;
+  const isProcessing = conversionStatus === 'processing';
 
-  const handleFileUpload = (file: File) => {
+  // A preview is only valid for the exact input it was parsed from, and export
+  // re-reads the *current* input. So any edit after a preview must discard it;
+  // otherwise the user could export questions (or errors) they never reviewed.
+  // Inputs are locked while processing, so this never races an in-flight request.
+  const invalidatePreview = () => {
+    if (conversionStatus === 'idle' && previewData.length === 0) return;
+    setConversionStatus('idle');
+    setPreviewData([]);
+    setShowPreview(false);
+  };
+
+  const handleFileUpload = (file: File | null) => {
     setSelectedFile(file);
+    invalidatePreview();
   };
 
   const parseQuestions = async (content: string | null, file: File | null): Promise<Question[]> => {
@@ -289,7 +302,7 @@ const Dashboard = () => {
               </CardHeader>
               <CardContent className="space-y-4">
                 {/* File Upload Component */}
-                <FileUpload onSubmit={handleFileUpload} />
+                <FileUpload onSubmit={handleFileUpload} disabled={isProcessing} />
 
                 <Separator />
 
@@ -302,7 +315,11 @@ const Dashboard = () => {
                     placeholder="Paste your quiz questions here..."
                     className="min-h-[200px] border-input-border focus:ring-2 focus:ring-primary"
                     value={quizContent}
-                    onChange={(e) => setQuizContent(e.target.value)}
+                    disabled={isProcessing}
+                    onChange={(e) => {
+                      setQuizContent(e.target.value);
+                      invalidatePreview();
+                    }}
                   />
                 </div>
               </CardContent>
@@ -325,7 +342,7 @@ const Dashboard = () => {
                   />
                   <Button
                     onClick={() => handleConvert()}
-                    disabled={(!quizContent.trim() && !selectedFile) || !quizTitle.trim() || conversionStatus === 'processing'}
+                    disabled={(!quizContent.trim() && !selectedFile) || !quizTitle.trim() || isProcessing}
                     variant="outline"
                     className="bg-gradient-primary hover:shadow-glow transition-all duration-300 col-span-1 md:col-span-2"
                   >
@@ -602,6 +619,11 @@ Answers: color: red, animal: dog`}</pre>
           </ScrollArea>
 
           <DialogFooter className="flex gap-3">
+            {errorCount > 0 && (
+              <p id="export-blocked-reason" className="text-sm text-destructive sm:mr-auto self-center">
+                Fix the {errorCount} error{errorCount > 1 ? "s" : ""} above to enable export.
+              </p>
+            )}
             <Button
               variant="outline"
               onClick={() => setShowPreview(false)}
@@ -614,6 +636,7 @@ Answers: color: red, animal: dog`}</pre>
               onClick={() => handleFinalExport('qti')}
               className="bg-gradient-primary hover:shadow-glow flex items-center gap-2"
               disabled={errorCount > 0}
+              aria-describedby={errorCount > 0 ? "export-blocked-reason" : undefined}
             >
               <Download className="w-4 h-4" />
               Export QTI
@@ -622,6 +645,7 @@ Answers: color: red, animal: dog`}</pre>
               onClick={() => handleFinalExport('canvas')}
               className="bg-gradient-primary hover:shadow-glow flex items-center gap-2"
               disabled={errorCount > 0}
+              aria-describedby={errorCount > 0 ? "export-blocked-reason" : undefined}
             >
               <Download className="w-4 h-4" />
               Export Canvas

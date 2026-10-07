@@ -299,7 +299,9 @@ def create_qti_1_2_package(quiz_title, parsed_data):
         elif q_type == "essay_question":
             _create_essay_item(section, question)
         else:
-            print(f"Warning: Unknown question type '{q_type}' - skipping.")
+            # Never drop a question silently: a package with fewer questions
+            # than the user previewed is worse than a refused export.
+            raise ValueError(f"Cannot export question of type '{q_type}'.")
 
     # Convert to string and return
     rough_string = ET.tostring(qti_root, xml_declaration=True, encoding='UTF-8')

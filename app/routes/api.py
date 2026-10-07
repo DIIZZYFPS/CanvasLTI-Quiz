@@ -16,6 +16,37 @@ def _sanitize_filename(title):
     sanitized = re.sub(r'[\r\n\x00\\/:"\'*?<>|]', '', title)
     return sanitized.strip() or 'quiz'
 
+def _validate_for_export(questions):
+    """Refuse to export a quiz that is empty or still contains parse errors.
+
+    The preview UI already blocks this, but the API is the real gate: the
+    preview can be stale, and other clients can call the endpoints directly.
+    Without it, error questions were silently dropped and the user got a
+    "successful" export that was missing questions.
+    """
+    if not questions:
+        raise ValueError("No questions were found. Add at least one question before exporting.")
+
+    # Numbered the same way as the preview ("Question N" = Nth block).
+    bad = [(i, q) for i, q in enumerate(questions, 1) if q.get("type") == "error"]
+    if bad:
+        shown = "; ".join(f"Question {i}: {q.get('error', 'Unknown error')}" for i, q in bad[:3])
+        extra = f" (and {len(bad) - 3} more)" if len(bad) > 3 else ""
+        raise ValueError(
+            f"{len(bad)} question{'s' if len(bad) != 1 else ''} "
+            f"ha{'ve' if len(bad) != 1 else 's'} errors and can't be exported. {shown}{extra}"
+        )
+
+def _build_qti_zip(title, questions):
+    """Validate the parsed questions and return the QTI package as zip bytes."""
+    _validate_for_export(questions)
+    qti_package = create_qti_1_2_package(title, questions)
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        zip_file.writestr("quiz.qti.xml", qti_package.encode("utf-8"))
+    return zip_buffer.getvalue()
+
 @api_bp.route("/preview", methods=['POST'])
 def preview():
     try:
@@ -51,15 +82,9 @@ def download():
             title = _sanitize_filename((data.get("quiz_title") or "").strip())
             parsed_questions = parse_quiz_text(data.get("quiz_text", ""))
         
-        qti_package = create_qti_1_2_package(title, parsed_questions)
+        zip_bytes = _build_qti_zip(title, parsed_questions)
 
-        # Create a zip file in memory
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-            zip_file.writestr("quiz.qti.xml", qti_package.encode("utf-8"))
-
-        zip_buffer.seek(0)
-        return Response(zip_buffer.read(), mimetype="application/zip", headers={
+        return Response(zip_bytes, mimetype="application/zip", headers={
             "Content-Disposition": f'attachment; filename="{title}_package.zip"'
         })
     except ValueError as e:
@@ -85,15 +110,14 @@ def canvas():
 
         title = _sanitize_filename((data.get("quiz_title") or "").strip())
         parsed_questions = parse_quiz_text(data.get("quiz_text", ""))
-        qti_package = create_qti_1_2_package(title, parsed_questions)
 
-        # 1. Create a zip file in memory
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-            zip_file.writestr("quiz.qti.xml", qti_package.encode("utf-8"))
-
-        zip_buffer.seek(0)
-        zip_content = zip_buffer.read()
+        # Validate before touching Canvas so a bad quiz never creates a
+        # migration. Handled here (not by a blanket ValueError handler) because
+        # requests' JSONDecodeError is also a ValueError.
+        try:
+            zip_content = _build_qti_zip(title, parsed_questions)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
         zip_size = len(zip_content)
 
         CANVAS_DOMAIN = os.getenv('CANVAS_DOMAIN')

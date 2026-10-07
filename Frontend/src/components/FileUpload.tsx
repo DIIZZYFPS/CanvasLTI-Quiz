@@ -5,21 +5,23 @@ import { Button } from "./ui/button";
 import { toast } from "sonner";
 
 interface FileUploadProps {
-    onSubmit: (file: File) => void;
+    // Called with the chosen file, or null when the file is removed.
+    onSubmit: (file: File | null) => void;
+    disabled?: boolean;
 };
 
 const ALLOWED_EXTENSIONS = ['.pdf', '.docx', '.txt', '.md'];
 
-export function FileUpload({ onSubmit }: FileUploadProps) {
+export function FileUpload({ onSubmit, disabled = false }: FileUploadProps) {
 
     const [isDragOver, setIsDragOver] = useState(false);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
     const validateAndSelectFile = (file: File) => {
-        const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')).toLowerCase() : '';
+        const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')).toLowerCase() : '';
         if (!ALLOWED_EXTENSIONS.includes(ext)) {
-            const extLabel = ext ? ` '${ext}'` : '';
-            toast.error(`Unsupported file type${extLabel}. Please select a .pdf, .docx, .txt, or .md file.`);
+            const extLabel = ext ? ` '${ext}'` : '';
+            toast.error(`Unsupported file type${extLabel}. Please select a .pdf, .docx, .txt, or .md file.`);
             return false;
         }
         setSelectedFile(file);
@@ -30,6 +32,7 @@ export function FileUpload({ onSubmit }: FileUploadProps) {
     const handleDrop = (e: React.DragEvent) => {
         e.preventDefault();
         setIsDragOver(false);
+        if (disabled) return;
         const files = Array.from(e.dataTransfer.files);
         if (files.length > 0) {
             validateAndSelectFile(files[0]);
@@ -53,7 +56,7 @@ export function FileUpload({ onSubmit }: FileUploadProps) {
 
     const removeFile = () => {
         setSelectedFile(null);
-        onSubmit(null as unknown as File);
+        onSubmit(null);
     };
 
   return (
@@ -82,6 +85,7 @@ export function FileUpload({ onSubmit }: FileUploadProps) {
                 variant="ghost"
                 size="sm"
                 onClick={removeFile}
+                disabled={disabled}
                 className="text-red-500 hover:bg-red-50"
             >
                 <X className="h-4 w-4" />
