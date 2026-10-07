@@ -221,3 +221,158 @@ def test_progress_proxy_passes_timeout_and_maps_to_504(client, monkeypatch):
     )
     assert seen.get("timeout")
     assert res.status_code == 504
+
+
+# --- quiz titles and the download header -------------------------------------
+
+TITLES = [
+    "Bob's Quiz: Intro / Review",
+    "Week 3 – Quiz",          # en dash: not Latin-1
+    "Prof’s “Final”",  # curly quotes: not Latin-1
+    "Café 测验",       # accented + CJK
+]
+
+
+@pytest.mark.parametrize("title", TITLES)
+def test_download_header_is_wire_safe_for_any_title(client, title):
+    """Regression: a non-Latin-1 title aborted the response with
+    UnicodeEncodeError because the header was built by hand. HTTP headers go
+    out as Latin-1, so every value must be encodable as such."""
+    res = _post_json(client, "/api/download", quiz_title=title, quiz_text="What year?\nAnswer: 1945")
+    assert res.status_code == 200
+    for name, value in res.headers:
+        value.encode("latin-1")  # raises if the server would choke
+    disposition = res.headers["Content-Disposition"]
+    assert disposition.startswith("attachment")
+    if not title.isascii():
+        assert "filename*=UTF-8''" in disposition
+
+
+@pytest.mark.parametrize("title", TITLES)
+def test_download_keeps_quiz_title_intact_inside_package(client, title):
+    """Regression: the filename sanitiser was also applied to the quiz title,
+    so "Bob's Quiz: Intro / Review" became "Bobs Quiz Intro  Review" in Canvas."""
+    import xml.etree.ElementTree as ET
+    res = _post_json(client, "/api/download", quiz_title=title, quiz_text="What year?\nAnswer: 1945")
+    xml = zipfile.ZipFile(io.BytesIO(res.data)).read("quiz.qti.xml")
+    assessment = ET.fromstring(xml).find("assessment")
+    assert assessment.get("title") == title
+
+
+def test_download_filename_is_sanitised(client):
+    res = _post_json(client, "/api/download", quiz_title="a/b:c*d?", quiz_text="What year?\nAnswer: 1945")
+    assert 'abcd_package.zip' in res.headers["Content-Disposition"]
+
+
+def test_download_title_control_characters_are_neutralised(client):
+    import xml.etree.ElementTree as ET
+    res = _post_json(client, "/api/download", quiz_title="Line1\nLine2\x00\x07", quiz_text="What year?\nAnswer: 1945")
+    assert res.status_code == 200
+    xml = zipfile.ZipFile(io.BytesIO(res.data)).read("quiz.qti.xml")
+    assessment = ET.fromstring(xml).find("assessment")
+    assert assessment.get("title") == "Line1 Line2"
+
+
+def test_download_blank_title_falls_back(client):
+    res = _post_json(client, "/api/download", quiz_title="   ", quiz_text="What year?\nAnswer: 1945")
+    assert res.status_code == 200
+    assert "quiz_package.zip" in res.headers["Content-Disposition"]
+
+
+@pytest.mark.parametrize("path", ["/api/preview", "/api/download"])
+@pytest.mark.parametrize("body", [
+    {"quiz_title": 123, "quiz_text": "What year?\nAnswer: 1945"},
+    {"quiz_title": "Q", "quiz_text": 123},
+    {"quiz_title": "Q", "quiz_text": ["a", "b"]},
+])
+def test_wrongly_typed_json_fields_are_a_400_not_a_500(client, path, body):
+    res = client.post(path, json=body, base_url="https://localhost")
+    if path == "/api/preview" and isinstance(body["quiz_text"], str):
+        assert res.status_code == 200  # preview ignores the title
+        return
+    assert res.status_code == 400
+    assert "attribute" not in res.get_json()["error"]
+
+
+def test_non_object_json_body_does_not_crash(client):
+    res = client.post("/api/download", json=["not", "an", "object"], base_url="https://localhost")
+    assert res.status_code == 400
+
+
+# --- error responses don't leak internals ------------------------------------
+
+def test_unexpected_download_error_is_generic(client, monkeypatch):
+    import app.routes.api as api_module
+
+    def explode(*a, **k):
+        raise RuntimeError("secret internal detail /srv/app/db.sqlite")
+
+    monkeypatch.setattr(api_module, "create_qti_1_2_package", explode)
+    res = _post_json(client, "/api/download", quiz_title="Q", quiz_text=VALID)
+    assert res.status_code == 500
+    assert "secret" not in res.get_data(as_text=True)
+
+
+class _ErrorResponse(_FakeResponse):
+    def raise_for_status(self):
+        import requests
+        raise requests.exceptions.HTTPError(response=self)
+
+
+def test_canvas_http_error_shows_message_not_raw_json(client, monkeypatch):
+    import requests
+
+    monkeypatch.setenv("CANVAS_DOMAIN", "https://canvas.example.com")
+    raw = '{"errors":[{"message":"The specified resource does not exist."}],"error_report_id":98765}'
+    resp = _ErrorResponse(404, {"errors": [{"message": "The specified resource does not exist."}]})
+    resp.text = raw
+    monkeypatch.setattr(requests, "post", lambda *a, **k: resp)
+    _login(client)
+
+    res = _post_json(client, "/api/canvas", quiz_title="Q", quiz_text=VALID)
+    assert res.status_code == 502
+    msg = res.get_json()["error"]
+    assert "The specified resource does not exist." in msg
+    assert "404" in msg
+    assert "{" not in msg and "98765" not in msg
+
+
+def test_canvas_unexpected_error_is_generic(client, monkeypatch):
+    import requests
+
+    monkeypatch.setenv("CANVAS_DOMAIN", "https://canvas.example.com")
+
+    def explode(*a, **k):
+        raise RuntimeError("secret internal detail")
+
+    monkeypatch.setattr(requests, "post", explode)
+    _login(client)
+
+    res = _post_json(client, "/api/canvas", quiz_title="Q", quiz_text=VALID)
+    assert res.status_code == 500
+    assert "secret" not in res.get_data(as_text=True)
+
+
+def test_canvas_attachment_name_uses_filename_safe_title(client, monkeypatch):
+    import requests
+
+    monkeypatch.setenv("CANVAS_DOMAIN", "https://canvas.example.com")
+    sent = {}
+
+    def fake_post(url, **kwargs):
+        if url.endswith("/content_migrations"):
+            sent["payload"] = kwargs["json"]
+            return _FakeResponse(200, {
+                "pre_attachment": {"upload_url": "https://upload.example.com/x", "upload_params": {}},
+                "progress_url": "https://canvas.example.com/api/v1/progress/1",
+            })
+        sent["upload_name"] = kwargs["files"]["file"][0]
+        return _FakeResponse(201)
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    _login(client)
+
+    res = _post_json(client, "/api/canvas", quiz_title="Bob's Quiz: Intro / Review", quiz_text=VALID)
+    assert res.status_code == 200
+    assert sent["payload"]["pre_attachment"]["name"] == "Bobs Quiz Intro Review.zip"
+    assert sent["upload_name"] == "Bobs Quiz Intro Review.zip"

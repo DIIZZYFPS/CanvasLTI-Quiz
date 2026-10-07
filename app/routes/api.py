@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, Response, send_file, session
+from flask import Blueprint, request, jsonify, send_file, session, current_app
 import io
 import re
 import zipfile
@@ -17,10 +17,69 @@ api_bp = Blueprint('api', __name__)
 CANVAS_API_TIMEOUT = (5, 30)
 CANVAS_UPLOAD_TIMEOUT = (5, 120)
 
+MAX_TITLE_LENGTH = 200
+
 def _sanitize_filename(title):
-    """Strip characters that are unsafe in filenames or Content-Disposition headers."""
+    """Make a title safe to use as a file name (zip name, Canvas attachment name).
+
+    This is for file names only. The quiz title shown in Canvas goes through
+    _clean_title, which keeps punctuation like apostrophes and colons.
+    """
     sanitized = re.sub(r'[\r\n\x00\\/:"\'*?<>|]', '', title)
+    sanitized = re.sub(r'\s+', ' ', sanitized)
     return sanitized.strip() or 'quiz'
+
+def _clean_title(raw):
+    """Normalise a user-supplied quiz title for display inside the QTI package.
+
+    Only strips what can't be represented (control characters, which are
+    invalid in XML) and collapses whitespace. It deliberately keeps characters
+    like ' : / and non-ASCII text so "Bob's Quiz: Week 3 - Intro" reaches Canvas
+    unchanged; _sanitize_filename is applied separately for file names.
+    """
+    if raw is None:
+        raw = ""
+    if not isinstance(raw, str):
+        raise ValueError("The quiz title must be text.")
+    title = re.sub(r'[\x00-\x1f\x7f]', ' ', raw)
+    title = re.sub(r'\s+', ' ', title).strip()[:MAX_TITLE_LENGTH].strip()
+    return title or 'quiz'
+
+def _canvas_error_message(response):
+    """A short, user-safe description of a failed Canvas API response.
+
+    Canvas error bodies are returned as raw text/JSON; surfacing them verbatim
+    shows users JSON blobs and can expose internals, so the raw body is logged
+    instead and only Canvas' own human-readable message is passed on.
+    """
+    status = getattr(response, "status_code", None)
+    current_app.logger.warning("Canvas API error %s: %s", status, (getattr(response, "text", "") or "")[:500])
+
+    detail = ""
+    try:
+        body = response.json()
+        errors = body.get("errors") if isinstance(body, dict) else None
+        if isinstance(errors, list) and errors and isinstance(errors[0], dict):
+            detail = str(errors[0].get("message") or "").strip()
+    except ValueError:
+        pass
+
+    message = f"Canvas rejected the request (HTTP {status})" if status else "Canvas rejected the request"
+    return f"{message}: {detail}" if detail else f"{message}."
+
+def _json_body():
+    """The request's JSON body as a dict ({} if absent, malformed, or not an object)."""
+    data = request.get_json(silent=True)
+    return data if isinstance(data, dict) else {}
+
+def _json_text(data, key):
+    """A string field from a JSON body, rejecting non-string values with a 400-able error."""
+    value = data.get(key, "")
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise ValueError(f"'{key}' must be text.")
+    return value
 
 def _validate_for_export(questions):
     """Refuse to export a quiz that is empty or still contains parse errors.
@@ -64,21 +123,22 @@ def preview():
             else:
                 return jsonify({"error": "No file provided"}), 400
         else:
-            data = request.get_json(silent=True) or {}
-            parsed_questions = parse_quiz_text(data.get("quiz_text", ""))
+            data = _json_body()
+            parsed_questions = parse_quiz_text(_json_text(data, "quiz_text"))
         return jsonify({"questions": parsed_questions})
     except HTTPException:
         raise  # e.g. 413 request too large: let Flask's handler answer, not a 500
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    except Exception as e:
+    except Exception:
+        current_app.logger.exception("Preview failed")
         return jsonify({"error": "Failed to process preview"}), 500
 
 @api_bp.route("/download", methods=['POST'])
 def download():
     try:
         if request.content_type and request.content_type.startswith("multipart/form-data"):
-            title = _sanitize_filename(request.form.get("quiz_title", ""))
+            title = _clean_title(request.form.get("quiz_title", ""))
             file = request.files.get("file")
             if file:
                 content = read_file(file)
@@ -86,26 +146,33 @@ def download():
             else:
                 return jsonify({"error": "No file provided"}), 400
         else:
-            data = request.get_json(silent=True) or {}
-            title = _sanitize_filename((data.get("quiz_title") or "").strip())
-            parsed_questions = parse_quiz_text(data.get("quiz_text", ""))
-        
+            data = _json_body()
+            title = _clean_title(data.get("quiz_title"))
+            parsed_questions = parse_quiz_text(_json_text(data, "quiz_text"))
+
         zip_bytes = _build_qti_zip(title, parsed_questions)
 
-        return Response(zip_bytes, mimetype="application/zip", headers={
-            "Content-Disposition": f'attachment; filename="{title}_package.zip"'
-        })
+        # send_file emits an RFC 6266 header (ASCII fallback plus filename*=UTF-8''...).
+        # A hand-built `filename="{title}"` header cannot carry non-Latin-1 characters
+        # such as an en dash or curly apostrophe: the server aborts the response.
+        return send_file(
+            io.BytesIO(zip_bytes),
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name=f"{_sanitize_filename(title)}_package.zip",
+        )
     except HTTPException:
         raise
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"error": f"Failed to generate download package: {str(e)}"}), 500
+    except Exception:
+        current_app.logger.exception("Download failed")
+        return jsonify({"error": "Failed to generate the download package."}), 500
 
 @api_bp.route('/canvas', methods=['POST'])
 def canvas():
     try:
-        data = request.get_json(silent=True) or {}
+        data = _json_body()
 
         # Use course ID from request body if provided, otherwise from session
         course_id = data.get('course_id') or session.get('canvas_course_id')
@@ -118,17 +185,17 @@ def canvas():
             # 401 triggers the React frontend to initiate OAuth
             return jsonify({"error": "Missing Canvas API Token, please authorize"}), 401
 
-        title = _sanitize_filename((data.get("quiz_title") or "").strip())
-        parsed_questions = parse_quiz_text(data.get("quiz_text", ""))
-
         # Validate before touching Canvas so a bad quiz never creates a
         # migration. Handled here (not by a blanket ValueError handler) because
         # requests' JSONDecodeError is also a ValueError.
         try:
+            title = _clean_title(data.get("quiz_title"))
+            parsed_questions = parse_quiz_text(_json_text(data, "quiz_text"))
             zip_content = _build_qti_zip(title, parsed_questions)
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
         zip_size = len(zip_content)
+        zip_name = f"{_sanitize_filename(title)}.zip"
 
         CANVAS_DOMAIN = os.getenv('CANVAS_DOMAIN')
         headers = {
@@ -140,7 +207,7 @@ def canvas():
         mig_payload = {
             'migration_type': 'qti_converter',
             'pre_attachment': {
-                'name': f'{title}.zip',
+                'name': zip_name,
                 'size': zip_size,
                 'content_type': 'application/zip'
             }
@@ -165,7 +232,7 @@ def canvas():
             raise Exception("Failed to receive upload_url from Canvas")
 
         # STEP 2: Upload File Data
-        files = {'file': (f'{title}.zip', zip_content, 'application/zip')}
+        files = {'file': (zip_name, zip_content, 'application/zip')}
         
         # Upload the file without following redirects so we can explicitly handle
         # the Canvas redirect behavior and surface real errors.
@@ -204,10 +271,10 @@ def canvas():
     except requests.exceptions.Timeout:
         return jsonify({"error": "Canvas took too long to respond. Please try again in a moment."}), 504
     except requests.exceptions.HTTPError as e:
-        error_msg = e.response.text if hasattr(e.response, 'text') else str(e)
-        return jsonify({"error": f"Canvas API Error: {error_msg}"}), 500
-    except Exception as e:
-        return jsonify({"error": f"Internal Server Error: {str(e)}"}), 500
+        return jsonify({"error": _canvas_error_message(e.response)}), 502
+    except Exception:
+        current_app.logger.exception("Canvas upload failed")
+        return jsonify({"error": "Failed to upload to Canvas. Please try again, or use Export QTI and import the file manually."}), 500
 
 @api_bp.route('/proxy/progress', methods=['GET'])
 def proxy_progress():
@@ -235,8 +302,11 @@ def proxy_progress():
         return jsonify(res.json())
     except requests.exceptions.Timeout:
         return jsonify({"error": "Canvas took too long to respond. Please try again."}), 504
-    except requests.exceptions.RequestException as e:
-        return jsonify({"error": str(e)}), 500
+    except requests.exceptions.HTTPError as e:
+        return jsonify({"error": _canvas_error_message(e.response)}), 502
+    except requests.exceptions.RequestException:
+        current_app.logger.exception("Canvas progress check failed")
+        return jsonify({"error": "Could not check the upload progress with Canvas."}), 502
 
 @api_bp.route('/instructions')
 def download_instructions():

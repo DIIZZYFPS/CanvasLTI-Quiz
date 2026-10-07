@@ -1,7 +1,22 @@
+import html
 import xml.etree.ElementTree as ET
 import re
 import random
 import xml.dom.minidom
+
+def _stem_html(text, with_span=False):
+    """Wrap question text in the HTML Canvas expects, escaping it first.
+
+    The stem is sent as text/html, so unescaped user text is *interpreted* as
+    markup: "Which tag makes a link: <a>?" loses the tag and "x < 5" can swallow
+    text up to the next '>'. Escaping makes the text show exactly as typed (and
+    keeps typed markup from being injected into the quiz). Answer options are
+    sent as text/plain and don't need this.
+    """
+    inner = html.escape(text, quote=False)
+    if with_span:
+        inner = f"<span>{inner}</span>"
+    return f"<div><p>{inner}</p></div>"
 
 def _safe_var_ident(var, index):
     """Convert a FMB variable name to a safe QTI identifier.
@@ -25,7 +40,7 @@ def _create_mcq_item(section, question):
     # Presentation (Question Text and Answers)
     presentation = ET.SubElement(item, 'presentation')
     material = ET.SubElement(presentation, 'material')
-    ET.SubElement(material, 'mattext', {'texttype': 'text/html'}).text = f"<div><p>{question['question_text']}</p></div>"
+    ET.SubElement(material, 'mattext', {'texttype': 'text/html'}).text = _stem_html(question['question_text'])
     
     response_lid = ET.SubElement(presentation, 'response_lid', {'ident': 'response1', 'rcardinality': 'Single'})
     render_choice = ET.SubElement(response_lid, 'render_choice')
@@ -59,7 +74,7 @@ def _create_essay_item(section, question):
     # Presentation (Just the prompt)
     presentation = ET.SubElement(item, 'presentation')
     material = ET.SubElement(presentation, 'material')
-    ET.SubElement(material, 'mattext', {'texttype': 'text/html'}).text = f"<div><p>{question['question_text']}</p></div>"
+    ET.SubElement(material, 'mattext', {'texttype': 'text/html'}).text = _stem_html(question['question_text'])
     
     # Response container for text entry
     response_str = ET.SubElement(presentation, 'response_str', {'ident': 'response1', 'rcardinality': 'Single'})
@@ -103,7 +118,7 @@ def _create_short_answer_item(section, question):
     # Presentation
     presentation = ET.SubElement(item, 'presentation')
     material = ET.SubElement(presentation, 'material')
-    ET.SubElement(material, 'mattext', {'texttype': 'text/html'}).text = f"<div><p><span>{question['question_text']}</span></p></div>"
+    ET.SubElement(material, 'mattext', {'texttype': 'text/html'}).text = _stem_html(question['question_text'], with_span=True)
     
     response_lid = ET.SubElement(presentation, 'response_lid', {'ident': 'response1', 'rcardinality': 'Single'})
     render_choice = ET.SubElement(response_lid, 'render_choice')
@@ -174,7 +189,7 @@ def _create_fmb_item(section, question):
     presentation = ET.SubElement(item, 'presentation')
     material = ET.SubElement(presentation, 'material')
     # Wrap in div spans as seen in reference
-    ET.SubElement(material, 'mattext', {'texttype': 'text/html'}).text = f"<div><p><span>{question['question_text']}</span></p></div>"
+    ET.SubElement(material, 'mattext', {'texttype': 'text/html'}).text = _stem_html(question['question_text'], with_span=True)
     
     for var, text_list in question['variables'].items():
         var_ident = var_to_ident[var]
@@ -240,7 +255,7 @@ def _create_multi_answer_item(section, question):
     # Presentation
     presentation = ET.SubElement(item, 'presentation')
     material = ET.SubElement(presentation, 'material')
-    ET.SubElement(material, 'mattext', {'texttype': 'text/html'}).text = f"<div><p>{question['question_text']}</p></div>"
+    ET.SubElement(material, 'mattext', {'texttype': 'text/html'}).text = _stem_html(question['question_text'])
     
     response_lid = ET.SubElement(presentation, 'response_lid', {'ident': 'response1', 'rcardinality': 'Multiple'})
     render_choice = ET.SubElement(response_lid, 'render_choice')
