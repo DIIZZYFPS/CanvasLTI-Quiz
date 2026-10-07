@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <title>Quiz to QTI Converter</title>
+  <rect width="32" height="32" rx="7" fill="#262626"/>
+  <path d="M10 6h8l5 5v13a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" fill="#fafafa"/>
+  <path d="M18 6l5 5h-3.5A1.5 1.5 0 0 1 18 9.5z" fill="#f0b100"/>
+  <path d="M12 15.5h8M12 19h8M12 22.5h5" stroke="#262626" stroke-width="1.6" stroke-linecap="round" fill="none"/>
+</svg>
