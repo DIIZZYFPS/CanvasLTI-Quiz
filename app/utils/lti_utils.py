@@ -5,21 +5,7 @@ import shutil
 import tempfile
 import threading
 from flask import current_app
-from pylti1p3.contrib.flask import FlaskMessageLaunch, FlaskCacheDataStorage
-from pylti1p3.registration import Registration
-
-class ExtendedFlaskMessageLaunch(FlaskMessageLaunch):
-    def validate_nonce(self):
-        """
-        Probably it is bug on "https://lti-ri.imsglobal.org":
-        site passes invalid "nonce" value during deep links launch.
-        Because of this in case of iss == http://imsglobal.org just skip nonce validation.
-        """
-        iss = self.get_iss()
-        deep_link_launch = self.is_deep_link_launch()
-        if iss == "http://imsglobal.org" and deep_link_launch:
-            return self
-        return super().validate_nonce()
+from pylti1p3.contrib.flask import FlaskCacheDataStorage
 
 # State for the env-var key path below. Built once per process (and again only if the
 # inputs change) rather than on every request.
@@ -120,10 +106,3 @@ def create_ephemeral_config(original_path, actual_priv_path, actual_pub_path, ou
 def get_launch_data_storage():
     from .. import cache
     return FlaskCacheDataStorage(cache)
-
-def get_jwk_from_public_key(key_name):
-    key_path = os.path.join(current_app.root_path, 'config', key_name)
-    with open(key_path, 'rb') as key_file:
-        public_key = key_file.read()
-        jwk = Registration.get_jwk(public_key)
-        return jwk

@@ -1,5 +1,5 @@
 import re
-from .text_utils import extract_points, _clean_points_text, BLANK_VAR_RE
+from .text_utils import _clean_points_text, BLANK_VAR_RE
 
 def detect_respondus_format(text):
     """

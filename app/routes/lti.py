@@ -1,12 +1,22 @@
-from flask import Blueprint, request, redirect, session, jsonify
+from flask import Blueprint, current_app, redirect, session, jsonify
 import urllib.parse
 from pylti1p3.contrib.flask import FlaskOIDCLogin, FlaskRequest, FlaskMessageLaunch
+from pylti1p3.exception import LtiException, OIDCException
 from pylti1p3.tool_config import ToolConfJsonFile
-from ..utils.lti_utils import get_lti_config_path, get_launch_data_storage, ExtendedFlaskMessageLaunch
+from ..utils.lti_utils import get_lti_config_path, get_launch_data_storage
 from ..utils.render_utils import clean_course_id
 from ..utils.session_tokens import has_canvas_token
 
 lti_bp = Blueprint('lti', __name__)
+
+@lti_bp.errorhandler(LtiException)
+@lti_bp.errorhandler(OIDCException)
+def invalid_lti_request(error):
+    """A launch or login that doesn't validate (bad signature, replayed nonce, unknown
+    issuer, missing parameters...). Anyone can send these, so answer with a plain 400 and
+    log the reason, rather than a 500 with a stack trace."""
+    current_app.logger.warning("Rejected LTI request: %s", error)
+    return "This launch could not be validated. Please relaunch the tool from Canvas.", 400
 
 @lti_bp.route('/login/', methods=['POST', 'GET'])
 def login():
@@ -26,7 +36,7 @@ def launch():
     tool_conf = ToolConfJsonFile(get_lti_config_path())
     flask_request = FlaskRequest()
     launch_data_storage = get_launch_data_storage()
-    message_launch = ExtendedFlaskMessageLaunch(request=flask_request, tool_config=tool_conf, launch_data_storage=launch_data_storage)
+    message_launch = FlaskMessageLaunch(request=flask_request, tool_config=tool_conf, launch_data_storage=launch_data_storage)
     launch_data = message_launch.get_launch_data()
 
     # 1. Capture the Course ID from the LTI Launch Claim with robust fallbacks
