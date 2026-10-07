@@ -178,9 +178,10 @@ const Dashboard = () => {
             throw error; // Re-throw if it wasn't a 401
           }
 
-          const progressUrl = response?.data?.progress_url;
-          if (!progressUrl) {
-            throw new Error("No progress URL returned from Canvas");
+          // Poll by numeric id; the server builds the Canvas URL itself.
+          const progressId = response?.data?.progress_id;
+          if (!progressId) {
+            throw new Error("Canvas didn't return a progress id for the upload");
           }
 
           toast.success("Upload initiated! Processing...");
@@ -193,7 +194,7 @@ const Dashboard = () => {
           while (!isComplete && pollAttempts < MAX_POLL_ATTEMPTS) {
             pollAttempts++;
             // We poll via our proxy to avoid CORS; no token in the query string
-            const pollRes = await api.get(`/proxy/progress?url=${encodeURIComponent(progressUrl)}`);
+            const pollRes = await api.get('/proxy/progress', { params: { id: progressId } });
             const state = pollRes.data.workflow_state;
             const rawCompletion = pollRes.data.completion;
             const completion = typeof rawCompletion === 'number' && rawCompletion >= 0 && rawCompletion <= 100

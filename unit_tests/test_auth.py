@@ -158,6 +158,7 @@ def test_course_id_is_url_encoded_in_redirect(client, token_exchange):
 def test_token_exchange_failure_does_not_store_token(client, monkeypatch):
     class _Bad:
         ok = False
+        status_code = 400
         text = "invalid_grant"
 
     monkeypatch.setattr(requests, "post", lambda *a, **k: _Bad())
@@ -165,3 +166,51 @@ def test_token_exchange_failure_does_not_store_token(client, monkeypatch):
     res = _callback(client, code="abc", state=state)
     assert res.status_code == 400
     assert "canvas_api_token" not in _session(client)
+
+
+# --- upstream error bodies stay out of the browser ---------------------------
+
+def _failing_exchange(monkeypatch, *, ok=False, text="invalid_grant: secret details", payload=None, json_error=False):
+    class _Resp:
+        def __init__(self):
+            self.ok = ok
+            self.status_code = 400
+            self.text = text
+
+        def json(self):
+            if json_error:
+                raise ValueError("not json")
+            return payload
+
+    monkeypatch.setattr(requests, "post", lambda *a, **k: _Resp())
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"ok": False, "text": "invalid_grant: secret details"},
+    {"ok": True, "text": "<html>gateway error: secret details</html>", "json_error": True},
+    {"ok": True, "text": "secret details", "payload": {"error": "secret details"}},
+    {"ok": True, "text": "secret details", "payload": ["not", "a", "dict"]},
+])
+def test_failed_token_exchange_shows_a_generic_message(client, monkeypatch, kwargs):
+    """Regression: Canvas' raw error body (and parsed JSON) was echoed to the browser."""
+    _failing_exchange(monkeypatch, **kwargs)
+    state = _start_flow(client)
+    res = _callback(client, code="abc", state=state)
+
+    assert res.status_code == 400
+    body = res.get_data(as_text=True)
+    assert "secret details" not in body and "invalid_grant" not in body
+    assert "relaunch" in body
+    assert "canvas_api_token" not in _session(client)
+
+
+def test_unreachable_canvas_during_token_exchange_is_a_clean_502(client, monkeypatch):
+    def boom(*a, **k):
+        raise requests.exceptions.ConnectionError("dns failure for canvas.internal.example")
+
+    monkeypatch.setattr(requests, "post", boom)
+    state = _start_flow(client)
+    res = _callback(client, code="abc", state=state)
+
+    assert res.status_code == 502
+    assert "dns failure" not in res.get_data(as_text=True)

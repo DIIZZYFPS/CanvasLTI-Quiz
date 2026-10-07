@@ -216,7 +216,7 @@ def test_progress_proxy_passes_timeout_and_maps_to_504(client, monkeypatch):
 
     res = client.get(
         "/api/proxy/progress",
-        query_string={"url": "https://canvas.example.com/api/v1/progress/1"},
+        query_string={"id": "1"},
         base_url="https://localhost",
     )
     assert seen.get("timeout")
@@ -376,3 +376,220 @@ def test_canvas_attachment_name_uses_filename_safe_title(client, monkeypatch):
     assert res.status_code == 200
     assert sent["payload"]["pre_attachment"]["name"] == "Bobs Quiz Intro Review.zip"
     assert sent["upload_name"] == "Bobs Quiz Intro Review.zip"
+
+
+# --- course id validation ----------------------------------------------------
+
+@pytest.mark.parametrize("bad", ["42/../../../users/self", "42?x=1", "abc", "4 2", "42#frag", "lti_context_id:abc", [42], {"a": 1}])
+def test_non_numeric_course_id_is_rejected_before_any_canvas_call(client, monkeypatch, bad):
+    """The course id is interpolated into a Canvas API path, so it must be digits."""
+    import requests
+
+    monkeypatch.setenv("CANVAS_DOMAIN", "https://canvas.example.com")
+    monkeypatch.setattr(requests, "post", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no Canvas call")))
+    _login(client)
+
+    res = _post_json(client, "/api/canvas", quiz_title="Q", quiz_text=VALID, course_id=bad)
+    assert res.status_code == 400
+    assert "course ID" in res.get_json()["error"]
+
+
+def test_non_numeric_course_id_from_the_session_is_rejected(client, monkeypatch):
+    """e.g. an LTI launch that fell back to the opaque context claim instead of the numeric id."""
+    import requests
+
+    monkeypatch.setenv("CANVAS_DOMAIN", "https://canvas.example.com")
+    monkeypatch.setattr(requests, "post", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no Canvas call")))
+    _login(client)
+    with client.session_transaction(base_url="https://localhost") as sess:
+        sess["canvas_course_id"] = "6d1c2e5a-aaaa-bbbb-cccc-0123456789ab"
+
+    res = _post_json(client, "/api/canvas", quiz_title="Q", quiz_text=VALID)
+    assert res.status_code == 400
+
+
+def test_numeric_course_id_is_used_in_the_migration_url(client, monkeypatch):
+    import requests
+
+    monkeypatch.setenv("CANVAS_DOMAIN", "https://canvas.example.com")
+    urls = []
+
+    def fake_post(url, **kwargs):
+        urls.append(url)
+        if url.endswith("/content_migrations"):
+            return _FakeResponse(200, {"pre_attachment": {"upload_url": "https://upload.example.com/x", "upload_params": {}},
+                                       "progress_url": "https://canvas.example.com/api/v1/progress/9"})
+        return _FakeResponse(201)
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    _login(client)
+    res = _post_json(client, "/api/canvas", quiz_title="Q", quiz_text=VALID, course_id="12345")
+    assert res.status_code == 200
+    assert urls[0] == "https://canvas.example.com/api/v1/courses/12345/content_migrations"
+
+
+# --- finishing the upload ----------------------------------------------------
+
+class _Redirect(_FakeResponse):
+    def __init__(self, location=None, status=303):
+        super().__init__(status)
+        self.headers = {"Location": location} if location else {}
+
+
+def _setup_redirecting_canvas(monkeypatch, upload_response, finalize_response=None, upload_url="https://upload.example.com/x"):
+    """Fake Canvas: migration OK, upload answers `upload_response`, finalize GET answers `finalize_response`."""
+    import requests
+
+    monkeypatch.setenv("CANVAS_DOMAIN", "https://canvas.example.com")
+    gets = []
+
+    def fake_post(url, **kwargs):
+        if url.endswith("/content_migrations"):
+            return _FakeResponse(200, {"pre_attachment": {"upload_url": upload_url, "upload_params": {}},
+                                       "progress_url": "https://canvas.example.com/api/v1/progress/77"})
+        return upload_response
+
+    def fake_get(url, **kwargs):
+        gets.append((url, kwargs))
+        return finalize_response or _FakeResponse(201)
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    monkeypatch.setattr(requests, "get", fake_get)
+    return gets
+
+
+def test_upload_redirect_is_followed_with_authorization(client, monkeypatch):
+    """Regression: Canvas' upload protocol requires GETting the redirect (with
+    auth) to confirm the upload. It used to be ignored, so on installs that answer
+    with a redirect the file stayed pending and the quiz never imported."""
+    target = "https://canvas.example.com/api/v1/files/9/create_success?uuid=abc"
+    gets = _setup_redirecting_canvas(monkeypatch, _Redirect(target))
+    _login(client)
+
+    res = _post_json(client, "/api/canvas", quiz_title="Q", quiz_text=VALID)
+    assert res.status_code == 200
+    assert len(gets) == 1
+    url, kwargs = gets[0]
+    assert url == target
+    assert kwargs["headers"] == {"Authorization": "Bearer tok"}
+    assert kwargs["allow_redirects"] is False
+    assert kwargs["timeout"]
+
+
+def test_relative_redirect_is_resolved_against_the_upload_url(client, monkeypatch):
+    gets = _setup_redirecting_canvas(
+        monkeypatch, _Redirect("/api/v1/files/9/create_success"),
+        upload_url="https://canvas.example.com/files_api",
+    )
+    _login(client)
+    res = _post_json(client, "/api/canvas", quiz_title="Q", quiz_text=VALID)
+    assert res.status_code == 200
+    assert gets[0][0] == "https://canvas.example.com/api/v1/files/9/create_success"
+
+
+@pytest.mark.parametrize("evil", [
+    "https://evil.example.net/steal",
+    "http://canvas.example.com/api/v1/files/9/create_success",   # scheme downgrade
+    "https://canvas.example.com.evil.net/x",
+    "//evil.example.net/x",
+])
+def test_token_is_never_sent_to_a_non_canvas_redirect(client, monkeypatch, evil):
+    gets = _setup_redirecting_canvas(monkeypatch, _Redirect(evil))
+    _login(client)
+
+    res = _post_json(client, "/api/canvas", quiz_title="Q", quiz_text=VALID)
+    assert res.status_code == 502
+    assert gets == [], "the bearer token must not be sent anywhere but Canvas"
+    assert "unexpected upload redirect" in res.get_json()["error"]
+
+
+def test_redirect_without_location_is_an_error(client, monkeypatch):
+    _setup_redirecting_canvas(monkeypatch, _Redirect(None))
+    _login(client)
+    res = _post_json(client, "/api/canvas", quiz_title="Q", quiz_text=VALID)
+    assert res.status_code == 502
+
+
+def test_plain_201_upload_needs_no_followup_request(client, monkeypatch):
+    gets = _setup_redirecting_canvas(monkeypatch, _FakeResponse(201))
+    _login(client)
+    res = _post_json(client, "/api/canvas", quiz_title="Q", quiz_text=VALID)
+    assert res.status_code == 200
+    assert gets == []
+
+
+def test_finalize_401_clears_the_token_and_asks_to_relaunch(client, monkeypatch):
+    _setup_redirecting_canvas(
+        monkeypatch, _Redirect("https://canvas.example.com/api/v1/files/9/create_success"),
+        finalize_response=_FakeResponse(401),
+    )
+    _login(client)
+    res = _post_json(client, "/api/canvas", quiz_title="Q", quiz_text=VALID)
+    assert res.status_code == 401
+    assert _post_json(client, "/api/canvas", quiz_title="Q", quiz_text=VALID).get_json()["error"].startswith("Missing Canvas API Token")
+
+
+def test_finalize_failure_is_reported_not_swallowed(client, monkeypatch):
+    bad = _ErrorResponse(500, {"errors": [{"message": "Something broke"}]})
+    _setup_redirecting_canvas(
+        monkeypatch, _Redirect("https://canvas.example.com/api/v1/files/9/create_success"),
+        finalize_response=bad,
+    )
+    _login(client)
+    res = _post_json(client, "/api/canvas", quiz_title="Q", quiz_text=VALID)
+    assert res.status_code == 502
+    assert "Something broke" in res.get_json()["error"]
+
+
+# --- progress by id ----------------------------------------------------------
+
+def test_canvas_response_includes_the_progress_id(client, monkeypatch):
+    _setup_redirecting_canvas(monkeypatch, _FakeResponse(201))
+    _login(client)
+    body = _post_json(client, "/api/canvas", quiz_title="Q", quiz_text=VALID).get_json()
+    assert body["progress_id"] == "77"
+
+
+def test_progress_proxy_builds_the_canvas_url_itself(client, monkeypatch):
+    import requests
+
+    monkeypatch.setenv("CANVAS_DOMAIN", "https://canvas.example.com/")
+    seen = []
+
+    def fake_get(url, **kwargs):
+        seen.append((url, kwargs))
+        return _FakeResponse(200, {"workflow_state": "running", "completion": 40})
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    _login(client)
+    res = client.get("/api/proxy/progress", query_string={"id": "123"}, base_url="https://localhost")
+
+    assert res.status_code == 200
+    assert res.get_json()["completion"] == 40
+    assert seen[0][0] == "https://canvas.example.com/api/v1/progress/123"
+    assert seen[0][1]["headers"] == {"Authorization": "Bearer tok"}
+
+
+@pytest.mark.parametrize("params", [
+    {},
+    {"id": ""},
+    {"id": "abc"},
+    {"id": "1/../../users/self"},
+    {"id": "1?x=2"},
+    {"id": "1 2"},
+    {"url": "https://canvas.example.com/api/v1/progress/1"},   # the old, URL-taking form
+])
+def test_progress_proxy_rejects_anything_but_a_numeric_id(client, monkeypatch, params):
+    import requests
+
+    monkeypatch.setenv("CANVAS_DOMAIN", "https://canvas.example.com")
+    monkeypatch.setattr(requests, "get", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no Canvas call")))
+    _login(client)
+    res = client.get("/api/proxy/progress", query_string=params, base_url="https://localhost")
+    assert res.status_code == 400
+
+
+def test_progress_proxy_without_a_session_is_401(client, monkeypatch):
+    monkeypatch.setenv("CANVAS_DOMAIN", "https://canvas.example.com")
+    res = client.get("/api/proxy/progress", query_string={"id": "1"}, base_url="https://localhost")
+    assert res.status_code == 401

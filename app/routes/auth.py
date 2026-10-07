@@ -1,4 +1,4 @@
-from flask import Blueprint, request, redirect, session, jsonify
+from flask import Blueprint, request, redirect, session, current_app
 import hmac
 import secrets
 import requests
@@ -114,23 +114,33 @@ def auth_callback():
     try:
         response = requests.post(f"{CANVAS_DOMAIN}/login/oauth2/token", data=payload, timeout=(5, 30))
     except requests.exceptions.RequestException:
-        return jsonify({"error": "Could not reach Canvas to finish authorization. Please close this window and relaunch the tool."}), 502
+        return "Could not reach Canvas to finish authorization. Please close this window and relaunch the tool from Canvas.", 502
+
+    # Canvas' error body (e.g. "invalid_grant") is for the operator's logs, not the
+    # user's browser, so it is logged rather than echoed back.
+    failure = (
+        "Canvas authorization failed. Please close this window and relaunch the tool from Canvas.",
+        400,
+    )
 
     if not response.ok:
-        return jsonify({"error": "Token exchange failed", "details": response.text}), 400
+        current_app.logger.warning("Canvas token exchange failed: %s %s", response.status_code, response.text[:300])
+        return failure
 
     try:
         token_data = response.json()
-    except Exception:
-        return jsonify({"error": "Invalid JSON response from Canvas during token exchange"}), 400
-    
-    if 'access_token' in token_data:
+    except ValueError:
+        current_app.logger.warning("Canvas token exchange returned non-JSON: %s", response.text[:300])
+        return failure
+
+    if isinstance(token_data, dict) and token_data.get('access_token'):
         session.permanent = True
         store_canvas_token(token_data['access_token'])
         session['canvas_course_id'] = course_id  # Re-store in case session didn't round-trip
         return redirect('/launch_success?' + urllib.parse.urlencode({'course_id': course_id}))
 
-    return jsonify({"error": "Failed to obtain API token", "details": token_data}), 400
+    current_app.logger.warning("Canvas token exchange returned no access_token")
+    return failure
 
 @auth_bp.route('/launch_success')
 def launch_success():

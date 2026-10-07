@@ -68,6 +68,60 @@ def _canvas_error_message(response):
     message = f"Canvas rejected the request (HTTP {status})" if status else "Canvas rejected the request"
     return f"{message}: {detail}" if detail else f"{message}."
 
+class CanvasUploadError(Exception):
+    """A Canvas upload step failed in a way that has a user-presentable message."""
+
+
+_ID_RE = re.compile(r'\d{1,20}')
+
+
+def _numeric_id(value):
+    """`value` as a digit string if it is a plausible Canvas numeric ID, else None.
+
+    IDs are interpolated into Canvas API paths, so anything else (slashes, '..',
+    '?', '#') must never get that far.
+    """
+    if isinstance(value, bool) or not isinstance(value, (str, int)):
+        return None
+    text = str(value).strip()
+    return text if _ID_RE.fullmatch(text) else None
+
+
+def _is_canvas_url(url):
+    """True if `url` has the same scheme and host as the configured CANVAS_DOMAIN."""
+    canvas = urllib.parse.urlparse((os.getenv('CANVAS_DOMAIN') or '').rstrip('/'))
+    target = urllib.parse.urlparse(url)
+    return bool(canvas.netloc) and (target.scheme, target.netloc.lower()) == (canvas.scheme, canvas.netloc.lower())
+
+
+def _finalize_upload(upload_res, upload_url, access_token):
+    """Complete a Canvas file upload that answered with a redirect.
+
+    Canvas's file-upload protocol (step 3) says that when the upload response is a
+    3xx redirect, the client must GET the Location - with the Authorization header -
+    to confirm the upload; until then the file stays "pending" and the content
+    migration never starts. This used to be skipped, so on installs that answer with
+    a redirect (rather than a 201) the quiz silently never imported.
+
+    The bearer token is only ever sent to Canvas's own origin.
+    """
+    location = upload_res.headers.get('Location')
+    if not location:
+        raise CanvasUploadError("Canvas didn't say how to finish the upload. Please try again.")
+
+    target = urllib.parse.urljoin(upload_url, location)
+    if not _is_canvas_url(target):
+        current_app.logger.warning("Refusing to follow upload redirect to a non-Canvas host: %s", target)
+        raise CanvasUploadError("Canvas sent an unexpected upload redirect, so the upload was stopped.")
+
+    return requests.get(
+        target,
+        headers={"Authorization": f"Bearer {access_token}"},
+        allow_redirects=False,
+        timeout=CANVAS_API_TIMEOUT,
+    )
+
+
 def _json_body():
     """The request's JSON body as a dict ({} if absent, malformed, or not an object)."""
     data = request.get_json(silent=True)
@@ -176,12 +230,15 @@ def canvas():
         data = _json_body()
 
         # Use course ID from request body if provided, otherwise from session
-        course_id = data.get('course_id') or session.get('canvas_course_id')
+        raw_course_id = data.get('course_id') or session.get('canvas_course_id')
         # Always use the Canvas API token from the server-side session only
         access_token = get_canvas_token()
 
-        if not course_id:
+        if not raw_course_id:
             return jsonify({"error": "Missing Canvas Course ID. Please refresh the tool launch."}), 400
+        course_id = _numeric_id(raw_course_id)
+        if course_id is None:
+            return jsonify({"error": "That isn't a valid Canvas course ID. Please relaunch the tool from your course."}), 400
         if not access_token:
             # 401 triggers the React frontend to initiate OAuth
             return jsonify({"error": "Missing Canvas API Token, please authorize"}), 401
@@ -250,25 +307,37 @@ def canvas():
             clear_canvas_token()
             return jsonify({"error": "Canvas token expired during upload. Please close and relaunch the tool."}), 401
 
-        # Treat 2xx as success and 3xx as the expected redirect handoff.
         if 200 <= upload_res.status_code < 300:
-            pass
+            pass  # uploaded; nothing more to confirm
         elif 300 <= upload_res.status_code < 400:
-            # Expected behavior: Canvas returns a redirect after a successful upload.
-            # We do not follow it here to avoid spurious 401s from downstream endpoints.
-            pass
+            # Canvas answers some uploads with a redirect that must be requested, with
+            # authorization, to confirm the upload (see _finalize_upload). We don't let
+            # `requests` follow it automatically: it would send no Authorization header
+            # and get a 401, and we want to control where the token goes.
+            finalize_res = _finalize_upload(upload_res, upload_url, access_token)
+            if finalize_res.status_code == 401:
+                clear_canvas_token()
+                return jsonify({"error": "Canvas token expired while finishing the upload. Please close and relaunch the tool."}), 401
+            if not 200 <= finalize_res.status_code < 300:
+                finalize_res.raise_for_status()
+                raise CanvasUploadError("Canvas didn't confirm the upload. Please try again.")
         else:
             # Any other status is an error; raise so the outer HTTPError handler can respond.
             upload_res.raise_for_status()
-        
-        # Return the progress URL so the React frontend can poll it
+
+        # The React frontend polls progress by its numeric id (see /proxy/progress). The
+        # URL is returned too for reference, but it is never requested on the client's say-so.
+        progress_match = re.fullmatch(r'/api/v1/progress/(\d+)/?', urllib.parse.urlparse(progress_url or '').path)
         return jsonify({
-            "message": "Upload initiated successfully", 
-            "progress_url": progress_url
+            "message": "Upload initiated successfully",
+            "progress_url": progress_url,
+            "progress_id": progress_match.group(1) if progress_match else None,
         })
-        
+
     except HTTPException:
         raise
+    except CanvasUploadError as e:
+        return jsonify({"error": str(e)}), 502
     except requests.exceptions.Timeout:
         return jsonify({"error": "Canvas took too long to respond. Please try again in a moment."}), 504
     except requests.exceptions.HTTPError as e:
@@ -281,22 +350,24 @@ def canvas():
 def proxy_progress():
     # Helper endpoint for React to poll progress without dealing with CORS.
     # The Canvas token is read from the server-side session only and never from the client.
+    #
+    # The client supplies only a numeric progress id; the URL is built here from the
+    # configured CANVAS_DOMAIN. (It used to accept a full URL and try to validate it,
+    # which left room for scheme downgrades and '..' path tricks to reach other Canvas
+    # endpoints with the user's token.)
     access_token = get_canvas_token()
-    progress_url = request.args.get('url')
-    
-    if not access_token or not progress_url:
-        return jsonify({"error": "Missing token or url"}), 400
+    progress_id = _numeric_id(request.args.get('id'))
+    canvas_domain = (os.getenv('CANVAS_DOMAIN') or '').rstrip('/')
 
-    # SSRF protection: restrict to the configured Canvas domain and expected path
-    CANVAS_DOMAIN = os.getenv('CANVAS_DOMAIN', '').rstrip('/')
-    try:
-        parsed = urllib.parse.urlparse(progress_url)
-        canvas_parsed = urllib.parse.urlparse(CANVAS_DOMAIN)
-        if parsed.netloc != canvas_parsed.netloc or not parsed.path.startswith('/api/v1/progress/'):
-            return jsonify({"error": "Invalid progress URL"}), 400
-    except Exception:
-        return jsonify({"error": "Invalid progress URL"}), 400
-        
+    if not access_token:
+        return jsonify({"error": "Missing Canvas API Token, please authorize"}), 401
+    if progress_id is None:
+        return jsonify({"error": "Missing or invalid progress id"}), 400
+    if not canvas_domain:
+        return jsonify({"error": "Canvas is not configured on the server"}), 500
+
+    progress_url = f"{canvas_domain}/api/v1/progress/{progress_id}"
+
     try:
         res = requests.get(progress_url, headers={"Authorization": f"Bearer {access_token}"}, timeout=CANVAS_API_TIMEOUT)
         res.raise_for_status()
