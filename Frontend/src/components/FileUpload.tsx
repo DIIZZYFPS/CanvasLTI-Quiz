@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils"
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { File as FileIcon, Upload, X } from "lucide-react"
 import { Button } from "./ui/button";
 import { toast } from "sonner";
@@ -16,6 +16,7 @@ export function FileUpload({ onSubmit, disabled = false }: FileUploadProps) {
 
     const [isDragOver, setIsDragOver] = useState(false);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
 
     const validateAndSelectFile = (file: File) => {
         const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')).toLowerCase() : '';
@@ -64,16 +65,16 @@ export function FileUpload({ onSubmit, disabled = false }: FileUploadProps) {
       className={cn(
         "border-2 border-dashed rounded-lg p-8 text-center transition-colors",
         isDragOver ? "border-primary bg-primary/5" : "border-border",
-        selectedFile && "border-yellow-500 bg-yellow-50/50"
+        selectedFile && "border-primary/50 bg-primary/5"
       )}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
     >
       {selectedFile ? (
-        <div className="flex items-center justify-between p-4 bg-background rounded-lf">
+        <div className="flex items-center justify-between p-4 bg-background rounded-lg">
             <div className="flex items-center gap-3">
-                <FileIcon className="h-6 w-6 text-primary" />
+                <FileIcon className="h-6 w-6 text-primary" aria-hidden="true" />
                 <div className="text-left">
                     <p className="font-medium">{selectedFile.name}</p>
                     <p className="text-sm text-muted-foreground">
@@ -86,14 +87,15 @@ export function FileUpload({ onSubmit, disabled = false }: FileUploadProps) {
                 size="sm"
                 onClick={removeFile}
                 disabled={disabled}
-                className="text-red-500 hover:bg-red-50"
+                aria-label={`Remove ${selectedFile.name}`}
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
             >
-                <X className="h-4 w-4" />
+                <X className="h-4 w-4" aria-hidden="true" />
             </Button>
         </div>
       ) : (
         <div className="space-y-4">
-            <Upload className="h-12 w-12 mx-auto text-muted-foreground" />
+            <Upload className="h-12 w-12 mx-auto text-muted-foreground" aria-hidden="true" />
             <div>
                 <p className="text-sm text-muted-foreground">
                     Drag and drop a file here, or
@@ -102,18 +104,26 @@ export function FileUpload({ onSubmit, disabled = false }: FileUploadProps) {
                     click to browse (.pdf, .docx, .txt, .md)
                 </p>
             </div>
+            {/* The input stays hidden; a real <button> opens it. A hidden input plus a
+                <label><span> has no keyboard path, so keyboard users could not pick a file. */}
             <input
+                ref={inputRef}
                 type="file"
                 onChange={handleFileInput}
                 className="hidden"
                 id="file-upload"
                 accept=".pdf,.docx,.txt,.md"
+                tabIndex={-1}
+                aria-hidden="true"
             />
-            <label htmlFor="file-upload">
-                <Button variant="outline" className="cursor-pointer" asChild>
-                    <span>Browse Files</span>
-                </Button>
-            </label>
+            <Button
+                type="button"
+                variant="outline"
+                disabled={disabled}
+                onClick={() => inputRef.current?.click()}
+            >
+                Browse Files
+            </Button>
         </div>
       )}
       </div>

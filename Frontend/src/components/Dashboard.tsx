@@ -1,4 +1,4 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -240,24 +240,24 @@ const Dashboard = () => {
     }
   };
 
-  const getStatusColor = () => {
-    switch (conversionStatus) {
-      case 'processing': return 'bg-primary';
-      case 'complete': return 'bg-success';
-      case 'error': return 'bg-destructive';
-      default: return 'bg-muted';
-    }
+  // Full class names on purpose: Tailwind finds classes by scanning the source,
+  // so building them as `${color}/10` produces CSS that is never generated.
+  const STATUS_STYLES: Record<typeof conversionStatus, { box: string; dot: string }> = {
+    idle: { box: 'bg-muted/40', dot: 'bg-muted-foreground/40' },
+    processing: { box: 'bg-primary/10', dot: 'bg-primary' },
+    complete: { box: 'bg-success/10', dot: 'bg-success' },
+    error: { box: 'bg-destructive/10', dot: 'bg-destructive' },
   };
 
   return (
-    <div className="min-h-screen bg-gradient-subtle">
+    <div className="min-h-screen bg-muted/40 dark:bg-background">
       {/* Header */}
       <header className="border-b bg-card/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-primary rounded-lg flex items-center justify-center">
-                <FileText className="w-6 h-6 text-ring" />
+              <div className="w-10 h-10 bg-primary text-primary-foreground rounded-lg flex items-center justify-center">
+                <FileText className="w-6 h-6" />
               </div>
               <div>
                 <h1 className="text-xl font-bold">Quiz to QTI Converter</h1>
@@ -265,23 +265,29 @@ const Dashboard = () => {
               </div>
             </div>
             {inCanvas ? (
-              <div className="flex items-center gap-2 bg-emerald-500/10 dark:bg-emerald-500/20 border border-emerald-500/30 px-3.5 py-1.5 rounded-full text-xs font-semibold text-emerald-600 dark:text-emerald-400 shadow-sm transition-all duration-300 hover:bg-emerald-500/20">
+              <div className="flex items-center gap-2 bg-success/10 border border-success/30 px-3.5 py-1.5 rounded-full text-xs font-semibold text-success shadow-sm">
                 <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  <span className="animate-ping motion-reduce:animate-none absolute inline-flex h-full w-full rounded-full bg-success opacity-60"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-success"></span>
                 </span>
                 <span>Canvas Connected</span>
-                <span className="w-1 h-1 rounded-full bg-emerald-600/30 dark:bg-emerald-400/30" />
+                <span className="w-1 h-1 rounded-full bg-success/40" />
                 <span className="opacity-95 font-mono">Course ID: {courseId}</span>
               </div>
             ) : (
-              <div className="flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-full text-xs font-medium text-amber-600 dark:text-amber-400">
+              <div className="flex items-center gap-1.5 bg-warning/10 border border-warning/30 px-3 py-1.5 rounded-full text-xs font-medium text-warning">
                 <AlertCircle className="w-3.5 h-3.5" />
                 Standalone Mode
               </div>
             )}
-            <Button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} variant="ghost">
-              {theme === 'dark' ? <Sun className='w-4 h-4' /> : <Moon className="w-4 h-4" />}</Button>
+            <Button
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              variant="ghost"
+              size="icon"
+              aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            >
+              {theme === 'dark' ? <Sun className="w-4 h-4" aria-hidden="true" /> : <Moon className="w-4 h-4" aria-hidden="true" />}
+            </Button>
           </div>
         </div>
       </header>
@@ -290,7 +296,7 @@ const Dashboard = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Input Section */}
           <div className="lg:col-span-2 space-y-6">
-            <Card className="shadow-card">
+            <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Upload className="w-5 h-5" />
@@ -313,7 +319,7 @@ const Dashboard = () => {
                   <Textarea
                     id="quiz-content"
                     placeholder="Paste your quiz questions here..."
-                    className="min-h-[200px] border-input-border focus:ring-2 focus:ring-primary"
+                    className="min-h-[200px]"
                     value={quizContent}
                     disabled={isProcessing}
                     onChange={(e) => {
@@ -326,25 +332,31 @@ const Dashboard = () => {
             </Card>
 
             {/* Conversion Controls */}
-            <Card className="shadow-card">
+            <Card>
               <CardHeader>
                 <CardTitle>Conversion Settings</CardTitle>
                 <CardDescription>Configure your QTI export preferences</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input
-                    id="quiz-title"
-                    placeholder="Quiz Title (required)"
-                    required
-                    value={quizTitle}
-                    onChange={(e) => setQuizTitle(e.target.value)}
-                  />
+                  <div className="space-y-2 md:col-span-2">
+                    <label htmlFor="quiz-title" className="text-sm font-medium">
+                      Quiz title
+                    </label>
+                    <Input
+                      id="quiz-title"
+                      placeholder="e.g. Week 3 Quiz"
+                      required
+                      aria-required="true"
+                      value={quizTitle}
+                      onChange={(e) => setQuizTitle(e.target.value)}
+                    />
+                  </div>
                   <Button
                     onClick={() => handleConvert()}
                     disabled={(!quizContent.trim() && !selectedFile) || !quizTitle.trim() || isProcessing}
-                    variant="outline"
-                    className="bg-gradient-primary hover:shadow-glow transition-all duration-300 col-span-1 md:col-span-2"
+                    size="lg"
+                    className="col-span-1 md:col-span-2"
                   >
                     Check Syntax and Preview
                   </Button>
@@ -359,33 +371,31 @@ const Dashboard = () => {
 
             {/* Formatting Instructions */}
             <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
-              <Card className="shadow-card">
-                <CollapsibleTrigger asChild>
-                  <CardHeader>
-                    <CardTitle className="flex items-center justify-between w-full">
-                      Formatting Instructions
-                      {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                    </CardTitle>
-                    <CardDescription>
-                      Follow these guidelines for automatic type detection. 
-                      <div className="mt-2 p-2 bg-amber-500/10 border border-amber-500/20 rounded-md text-amber-600 dark:text-amber-400 font-medium text-xs">
-                        ⚠️ IMPORTANT: You must leave at least one blank line between each question block.
-                      </div>
-                      <Separator className="my-2" />
-                      Our parser also natively supports the standard <b>Respondus Legacy Format</b> (Type: MC, MR, F, etc.).
-                    </CardDescription>
-                    <CardFooter>
-                      <Button
-                        variant="outline"
-                        className="w-full my-2"
-                        asChild
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <a href="/api/instructions" download>Download Detailed PDF Guide</a>
-                      </Button>
-                    </CardFooter>
-                  </CardHeader>
-                </CollapsibleTrigger>
+              <Card>
+                <CardHeader>
+                  {/* A real <button> as the trigger: the old trigger was a <div>, which
+                      keyboards can't focus, and it wrapped the download link too. */}
+                  <CollapsibleTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between gap-2 rounded-md text-left font-semibold leading-none outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    >
+                      <span>Formatting Instructions</span>
+                      {isExpanded ? <ChevronUp className="w-5 h-5" aria-hidden="true" /> : <ChevronDown className="w-5 h-5" aria-hidden="true" />}
+                    </button>
+                  </CollapsibleTrigger>
+                  <CardDescription>
+                    Follow these guidelines for automatic type detection.
+                    <div className="mt-2 p-2 bg-warning/10 border border-warning/30 rounded-md text-warning font-medium text-xs">
+                      <span aria-hidden="true">⚠️ </span>IMPORTANT: You must leave at least one blank line between each question block.
+                    </div>
+                    <Separator className="my-2" />
+                    Our parser also natively supports the standard <b>Respondus Legacy Format</b> (Type: MC, MR, F, etc.).
+                  </CardDescription>
+                  <Button variant="outline" className="w-full mt-2" asChild>
+                    <a href="/api/instructions" download>Download formatting guide (.txt)</a>
+                  </Button>
+                </CardHeader>
                 <CollapsibleContent>
                   <CardContent>
                     <h3 className="text-sm font-semibold mb-3 px-1 text-primary">Simplified Core Format</h3>
@@ -487,7 +497,7 @@ Answers: color: red, animal: dog`}</pre>
             </Collapsible>
 
             {/* Status Card */}
-            <Card className="shadow-card">
+            <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   {getStatusIcon()}
@@ -495,9 +505,9 @@ Answers: color: red, animal: dog`}</pre>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className={`p-4 rounded-lg ${getStatusColor()}/10 border border-current/20`}>
+                <div className={`p-4 rounded-lg border ${STATUS_STYLES[conversionStatus].box}`}>
                   <div className="flex items-center gap-2 mb-2">
-                    <div className={`w-2 h-2 rounded-full ${getStatusColor()}`} />
+                    <div className={`w-2 h-2 rounded-full ${STATUS_STYLES[conversionStatus].dot}`} />
                     <span className="font-medium capitalize">{conversionStatus}</span>
                   </div>
                   {conversionStatus === 'processing' && (
@@ -515,7 +525,7 @@ Answers: color: red, animal: dog`}</pre>
                     <Button
                       onClick={() => setShowPreview(true)}
                       variant="default"
-                      className="w-full bg-gradient-accent"
+                      className="w-full"
                     >
                       <Eye className="w-4 h-4 mr-2" />
                       View Preview
@@ -634,7 +644,7 @@ Answers: color: red, animal: dog`}</pre>
             </Button>
             <Button
               onClick={() => handleFinalExport('qti')}
-              className="bg-gradient-primary hover:shadow-glow flex items-center gap-2"
+              className="flex items-center gap-2"
               disabled={errorCount > 0}
               aria-describedby={errorCount > 0 ? "export-blocked-reason" : undefined}
             >
@@ -643,7 +653,7 @@ Answers: color: red, animal: dog`}</pre>
             </Button>
             {inCanvas && <Button
               onClick={() => handleFinalExport('canvas')}
-              className="bg-gradient-primary hover:shadow-glow flex items-center gap-2"
+              className="flex items-center gap-2"
               disabled={errorCount > 0}
               aria-describedby={errorCount > 0 ? "export-blocked-reason" : undefined}
             >
