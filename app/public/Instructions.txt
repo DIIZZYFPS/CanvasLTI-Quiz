@@ -1,20 +1,28 @@
 CANVAS QTI CONVERTER - FORMATTING GUIDE
 
-This guide explains how to format your quiz questions so they can be automatically converted into a Canvas QTI import package. 
+This guide explains how to format your quiz questions so they can be automatically converted into a Canvas QTI import package.
 
 *** GENERAL RULES ***
 1. Separate Questions: Leave at least one blank line between each question block.
-2. Points (Optional): You can specify point values anywhere in the question text. 
+2. Points (Optional): You can specify point values anywhere in the question text.
    Supported formats: "(1 point)", "(5 pts)", "[Points: 10]", "Points: 5", "Score: 2".
    Default: 1 point if not specified.
-3. Validation: The tool will check your syntax. If you forget an "Answer:" line or have missing options, it will flag the error.
+   Write "Points: 5" with the colon. A phrase in ordinary text such as "point 3 is the
+   vertex" is just text, not a point value.
+3. Numbering (Optional): A leading "1." or "1)" in front of a question is ignored.
+4. Square brackets: [like this] mark the blanks in Fill In Multiple Blanks questions.
+   Brackets in any other kind of question are fine as long as the question has an
+   "Answer:" line, for example "What does arr[0] return?". A question that has brackets
+   and no "Answer:" line is read as Fill In Multiple Blanks.
+5. Validation: The tool will check your syntax. If you forget an "Answer:" line or have missing options, it will flag the error.
 
 *** QUESTION TYPES ***
 
 1. MULTIPLE CHOICE
    - Usage: Standard questions with one correct option.
-   - Requirement: Question text, followed by options (A, B, C...), followed by "Answer: [Letter]".
-   
+   - Requirement: Question text, followed by options written as "A)", "B)", "C)" (a letter
+     and a closing parenthesis; "A." is not recognised), followed by "Answer: [Letter]".
+
    Example:
    Which programming language is known as the language of the web?
    A) Python
@@ -22,16 +30,16 @@ This guide explains how to format your quiz questions so they can be automatical
    C) C++
    Answer: B
 
-2. MULTIPLE ANSWERS (NEW)
+2. MULTIPLE ANSWERS
    - Usage: Questions where students select more than one correct option.
    - Requirement: List multiple letters in the answer line OR mark correct choices with an asterisk (*).
-   
+
    Example A (Starred):
    Select the prime numbers:
    *A) 2
     B) 4
    *C) 7
-   
+
    Example B (Tagged):
    Select the prime numbers:
    A) 2
@@ -41,25 +49,39 @@ This guide explains how to format your quiz questions so they can be automatical
 
 3. TRUE/FALSE
    - Usage: Binary True/False choice.
-   - Requirement: "Answer: True" or "Answer: False".
-   
+   - Requirement: "Answer: True" or "Answer: False". You can also start the question with
+     "TF:" or end it with "(T/F)" to make the type explicit.
+
    Example:
    Water boils at 100 degrees Celsius. (1 point)
    Answer: True
 
+   Example (explicit):
+   TF: The Earth is round.
+   Answer: True
+
 4. SHORT ANSWER
    - Usage: Questions requiring a typed word or phrase match.
-   - Requirement: Must have "Answer: [text]".
-   
+   - Requirement: Must have "Answer: [text]". You can also start the question with "SA:"
+     or add "[Short Answer]" to make the type explicit.
+
    Example:
    What is the capital of France?
    Answer: Paris
 
-5. FILL IN MULTIPLE BLANKS (FMB) (NEW)
+   Example (explicit):
+   SA: What is the capital of France?
+   Answer: Paris
+
+   Fill in a single blank with underscores:
+   A ____ in time saves nine.
+   Answer: stitch
+
+5. FILL IN MULTIPLE BLANKS (FMB)
    - Usage: Questions with multiple blanks in one sentence.
    - Style A (Auto-Blank): Simply wrap the answers in brackets.
      Example: The capital of [France] is [Paris].
-     
+
    - Style B (Mapped): Use bracketed variables and a mapping line.
      Example: The [c] of France is [p].
      Answers: c: capital, p: Paris
@@ -67,10 +89,19 @@ This guide explains how to format your quiz questions so they can be automatical
 6. ESSAY
    - Usage: Open-ended text response (manual grading).
    - Requirement: Start with "Essay:" OR end with "[Essay]".
-   
+
    Example:
    Essay: Discuss the socio-economic impacts of the Industrial Revolution.
    Points: 10
+
+*** UPLOADING A FILE ***
+You can upload a .txt, .md, .docx or .pdf file instead of pasting text (10 MB at most).
+- Text and Markdown files must be UTF-8.
+- Word (.docx): lists numbered or lettered by Word itself work, so options typed as an
+  automatic "A. B. C." list are read as A) B) C). Text inside tables is read in order.
+- PDF: the blank-line rule above still applies, and some PDFs do not keep the blank lines
+  between questions. If the preview shows several questions merged into one, add the blank
+  lines in the source document or paste the text instead.
 
 *** RESPONDUS COMPATIBILITY ***
 The tool also natively supports the standard Respondus Legacy format (Type: MC, MR, F, FMB, E). You can paste raw Respondus exports directly into the tool.

@@ -1,69 +1,45 @@
-# React + TypeScript + Vite
+# Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React 19 + TypeScript + Vite + Tailwind CSS v4 (shadcn/ui primitives in `src/components/ui/`).
+It is built into `../app/assets/`, which Flask serves; see the root [README](../README.md) for running the
+whole app and for how the committed build works.
 
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      ...tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      ...tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      ...tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm ci
+npm run dev       # http://localhost:5173, proxies /api to the Flask app on :5000
+npm test          # unit tests (Vitest)
+npm run lint
+npm run build     # type-checks, then writes ../app/assets (commit the result)
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Layout
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
 ```
+src/
+  components/
+    Dashboard.tsx        page: input, quiz details, check/export flow
+    PreviewDialog.tsx    question preview, error summary, export buttons
+    StatusPanel.tsx      what is happening / what happened, under the Check button
+    CanvasStatusPill.tsx header badge for the Canvas connection
+    FileUpload.tsx       controlled file picker (state lives in Dashboard)
+    FormattingGuide.tsx  the "how to format" card
+    ui/                  shadcn/ui primitives
+  hooks/useCanvasSession.ts   asks GET /api/session whether Canvas is connected
+  lib/                   small pure helpers (quiz.ts, errors.ts, textarea.ts)
+  types/quiz.ts          the shape of a parsed question (mirrors app/utils/parser.py)
+```
+
+## Things worth knowing
+
+- **Tailwind v4 reads no `tailwind.config.ts`.** Design tokens (colours, radius, the `success`, `warning`
+  and `destructive-text` shades) are CSS variables in `src/index.css`, registered with `@theme inline`.
+  A class that isn't defined there generates nothing, silently; and `tailwind-merge` treats an unknown
+  `bg-something` as a background colour, so it can delete a component's real `bg-primary`.
+- **Tailwind finds classes by scanning source for whole strings.** Never build one by concatenation
+  (`` `bg-${tone}/10` ``): the CSS is never generated. Use a literal map of full class names.
+- **Canvas state comes from the server** (`/api/session`), never from the page or `sessionStorage`; the
+  server session is the only thing that knows whether the Canvas token is still valid.
+- **A preview is only valid for the input it was made from.** Editing the input discards it, and inputs are
+  locked while a request is in flight.
+- Errors from the API are `{ "error": "..." }`. Use `readApiError` (`lib/errors.ts`): downloads use
+  `responseType: 'blob'`, which delivers that JSON as a Blob.
