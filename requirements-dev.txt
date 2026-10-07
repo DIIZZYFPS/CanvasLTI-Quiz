@@ -1,0 +1,5 @@
+# Everything needed to run the tests and linters (CI installs this file).
+-r requirements.txt
+
+pytest>=8,<10
+ruff>=0.5,<1

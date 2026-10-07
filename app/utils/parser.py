@@ -1,3 +1,4 @@
+import logging
 import re
 from .text_utils import extract_points, _clean_points_text, BLANK_VAR_RE
 from .respondus_parser import (
@@ -9,6 +10,8 @@ from .respondus_parser import (
     parse_respondus_fmb,
     parse_respondus_mr
 )
+
+logger = logging.getLogger(__name__)
 
 # --- Core Branch Parsers ---
 
@@ -347,7 +350,7 @@ def parse_quiz_text(text_input):
         points = extract_points(block)
 
         if is_respondus:
-            print(f"Parsing block {i} as Respondus Format")
+            logger.debug("Parsing block %s as Respondus format", i)
             # Detect subtype
             type_match = re.search(r'^Type:\s*([A-Z]+)', block, re.IGNORECASE | re.MULTILINE)
             r_type = type_match.group(1).upper() if type_match else "MC"
@@ -382,7 +385,7 @@ def parse_quiz_text(text_input):
                 question_data = {"id": f"error_{i}", "type": "error", "question_text": block, "error": f"Unsupported Respondus type: {r_type}"}
         else:
             # Fallback to Core Branch
-            print(f"Parsing block {i} as Core Format")
+            logger.debug("Parsing block %s as Core format", i)
             full_block_text = " ".join(lines)
             full_lower = full_block_text.lower()
             

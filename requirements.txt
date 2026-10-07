@@ -1,16 +1,18 @@
-# Backend Libraries
-flask
-flask_caching
-gunicorn
-python-dotenv
+# Runtime dependencies. Each is bounded to the major version line the app is tested with: an
+# open-ended `flask` lets a redeploy pull in a breaking release with no code change.
+# Test/lint tooling lives in requirements-dev.txt so it isn't installed in production.
 
-# LTI Libraries
-pylti1p3
-cryptography  # encrypts the Canvas token stored in the session cookie
+# Web
+Flask>=3.0,<4
+Flask-Caching>=2.1,<3
+gunicorn>=21.2,<27
+python-dotenv>=1.0,<2
+requests>=2.31,<3          # imported directly (Canvas API calls); previously only arrived via pylti1p3
 
-# Doc Parsing Libraries
-PyMuPDF
-python-docx
+# LTI
+PyLTI1p3>=2.0,<3
+cryptography>=42,<51       # encrypts the Canvas token in the session cookie; generates LTI keys
 
-# Testing
-pytest
+# Document parsing
+PyMuPDF>=1.24.3,<2         # first release that exposes the `pymupdf` module name (replaces `fitz`)
+python-docx>=1.1,<2

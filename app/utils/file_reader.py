@@ -31,9 +31,9 @@ def read_file(file):
 
     if is_pdf:
         try:
-            import fitz
+            import pymupdf  # `fitz` is the deprecated alias and warns on import
             file_bytes = file.read()
-            with fitz.open(stream=file_bytes, filetype="pdf") as doc:
+            with pymupdf.open(stream=file_bytes, filetype="pdf") as doc:
                 return "".join(page.get_text() for page in doc)
         except Exception as e:
             raise ValueError(f"Failed to parse PDF document. File may be corrupted or encrypted: {str(e)}")
