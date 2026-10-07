@@ -6,6 +6,8 @@ import tempfile
 import threading
 from flask import current_app
 from pylti1p3.contrib.flask import FlaskCacheDataStorage
+from pylti1p3.exception import LtiException
+from pylti1p3.tool_config import ToolConfJsonFile
 
 # State for the env-var key path below. Built once per process (and again only if the
 # inputs change) rather than on every request.
@@ -102,6 +104,24 @@ def create_ephemeral_config(original_path, actual_priv_path, actual_pub_path, ou
     _write_private_file(tmp_config_path, json.dumps(new_config))
 
     return tmp_config_path
+
+class RegisteredToolConf(ToolConfJsonFile):
+    """ToolConfJsonFile that reports an unregistered issuer/client as an LtiException.
+
+    pylti1p3 raises a bare `Exception("iss ... not found in settings")` for those, which
+    nothing can tell apart from a broken server config and so surfaces as a 500 with a stack
+    trace to anyone who can reach /login/ or /launch/. This is the request's fault, not ours.
+    An empty config (a deployment problem) is left to raise as before.
+    """
+
+    def get_iss_config(self, iss, client_id=None):
+        try:
+            return super().get_iss_config(iss, client_id)
+        except Exception as error:
+            if not self._config:
+                raise
+            raise LtiException(str(error)) from error
+
 
 def get_launch_data_storage():
     from .. import cache

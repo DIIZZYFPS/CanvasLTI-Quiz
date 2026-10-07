@@ -2,8 +2,7 @@ from flask import Blueprint, current_app, redirect, session, jsonify
 import urllib.parse
 from pylti1p3.contrib.flask import FlaskOIDCLogin, FlaskRequest, FlaskMessageLaunch
 from pylti1p3.exception import LtiException, OIDCException
-from pylti1p3.tool_config import ToolConfJsonFile
-from ..utils.lti_utils import get_lti_config_path, get_launch_data_storage
+from ..utils.lti_utils import RegisteredToolConf, get_lti_config_path, get_launch_data_storage
 from ..utils.render_utils import clean_course_id
 from ..utils.session_tokens import has_canvas_token
 
@@ -20,7 +19,7 @@ def invalid_lti_request(error):
 
 @lti_bp.route('/login/', methods=['POST', 'GET'])
 def login():
-    tool_conf = ToolConfJsonFile(get_lti_config_path())
+    tool_conf = RegisteredToolConf(get_lti_config_path())
     launch_data_storage = get_launch_data_storage()
 
     flask_request = FlaskRequest()
@@ -33,7 +32,7 @@ def login():
 
 @lti_bp.route('/launch/', methods=['POST'])
 def launch():
-    tool_conf = ToolConfJsonFile(get_lti_config_path())
+    tool_conf = RegisteredToolConf(get_lti_config_path())
     flask_request = FlaskRequest()
     launch_data_storage = get_launch_data_storage()
     message_launch = FlaskMessageLaunch(request=flask_request, tool_config=tool_conf, launch_data_storage=launch_data_storage)
@@ -69,5 +68,5 @@ def launch():
 
 @lti_bp.route('/jwks/', methods=['GET'])
 def get_jwks():
-    tool_conf = ToolConfJsonFile(get_lti_config_path())
+    tool_conf = RegisteredToolConf(get_lti_config_path())
     return jsonify(tool_conf.get_jwks())

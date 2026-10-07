@@ -54,7 +54,10 @@ def read_file(file):
     else:
         try:
             file_bytes = file.read()
-            return file_bytes.decode('utf-8')
+            # utf-8-sig: Windows Notepad's "UTF-8" option prepends a byte-order mark, which as plain
+            # utf-8 stays in the text as an invisible character and defeats the first question's
+            # prefix match ("Essay:", "SA:", "1.") and leaks into its text.
+            return file_bytes.decode('utf-8-sig')
         except UnicodeDecodeError:
             raise ValueError("Failed to read file. The document is binary or not valid UTF-8 text.")
         except Exception as e:
