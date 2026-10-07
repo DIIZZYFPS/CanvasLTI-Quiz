@@ -175,3 +175,83 @@ def test_multiple_blocks_require_blank_line_separator():
     assert len(questions) == 2
     assert questions[0]["type"] == "true_false_question"
     assert questions[1]["type"] == "short_answer_question"
+
+
+# --- Brackets in question text (regression) ---------------------------------
+# The fill-in-multiple-blanks check used to run first and treat *any* [brackets]
+# as blanks, which broke the documented [Essay]/[Short Answer] tags and any
+# question mentioning something like arr[0].
+
+def test_bracket_short_answer_tag_is_short_answer_not_fmb():
+    q = _only(parse_quiz_text("What is 2+2? [Short Answer]\nAnswer: 4"))
+    assert q["type"] == "short_answer_question"
+    assert q["answers"][0]["text"] == "4"
+    assert "[Short Answer]" not in q["question_text"]
+
+
+def test_bracket_essay_tag_at_end_is_essay_not_fmb():
+    """The formatting guide documents ending a question with [Essay]."""
+    q = _only(parse_quiz_text("Explain recursion. [Essay]"))
+    assert q["type"] == "essay_question"
+    assert "[Essay]" not in q["question_text"]
+
+
+def test_bracket_essay_prefix_with_brackets_in_text():
+    q = _only(parse_quiz_text("Essay: Describe how arr[0] differs from arr[1]."))
+    assert q["type"] == "essay_question"
+
+
+def test_bracket_in_mc_stem_stays_multiple_choice():
+    text = "What does arr[0] return in JavaScript?\nA) The first element\nB) The last element\nAnswer: A"
+    q = _only(parse_quiz_text(text))
+    assert q["type"] == "multiple_choice_question"
+    correct = next(a for a in q["answers"] if a["id"] == q["correct_answer_id"])
+    assert correct["text"] == "The first element"
+
+
+def test_bracket_in_multi_answer_stem_stays_multiple_answers():
+    text = "Which of these index list[0]?\nA) list[0]\nB) list[1]\nC) first(list)\nAnswer: A, C"
+    q = _only(parse_quiz_text(text))
+    assert q["type"] == "multiple_answers_question"
+    assert len(q["correct_answer_ids"]) == 2
+
+
+def test_bracket_in_tf_stem_stays_true_false():
+    q = _only(parse_quiz_text("TF: In Python, a list is written [1, 2].\nAnswer: True"))
+    assert q["type"] == "true_false_question"
+
+
+def test_bracket_in_short_answer_stem_without_tag():
+    q = _only(parse_quiz_text("What does arr[0] return?\nAnswer: the first element"))
+    assert q["type"] == "short_answer_question"
+    assert q["answers"][0]["text"] == "the first element"
+
+
+def test_bracket_points_marker_is_not_a_blank():
+    q = _only(parse_quiz_text("What is a list? [Points: 2]\nAnswer: a sequence"))
+    assert q["type"] == "short_answer_question"
+    assert q["points"] == "2"
+
+
+def test_fmb_typo_in_variable_name_still_gets_helpful_error():
+    """A mistyped variable must keep producing the specific FMB error rather
+    than silently falling through to a short-answer question."""
+    q = _only(parse_quiz_text("The [colour] sky.\nAnswers: color: blue"))
+    assert q["type"] == "error"
+    assert "colour" in q["error"]
+
+
+def test_respondus_fmb_still_parses():
+    q = _only(parse_quiz_text("Type: FMB\nThe [a] is red.\na = Roses"))
+    assert q["type"] == "fill_in_multiple_blanks_question"
+    assert q["variables"]["a"] == ["Roses"]
+
+
+def test_unbalanced_brackets_do_not_blow_up_runtime():
+    """Regression: `\\[([^\\]]+)\\]` was quadratic on runs of '[' (40k chars took
+    seconds; 160k about a minute) on an unauthenticated endpoint."""
+    import time
+    for payload in ("[" * 200_000, "[a" * 100_000, "Type: FMB\n" + "[" * 100_000):
+        start = time.perf_counter()
+        parse_quiz_text(payload)
+        assert time.perf_counter() - start < 2.0

@@ -50,6 +50,13 @@ def join_docx_paragraphs(paragraphs):
         prev_was_metadata = bool(_DOCX_METADATA_RE.match(line))
     return "\n".join(out)
 
+# A bracketed fill-in-the-blank variable, e.g. "[color]". The body excludes '['
+# on purpose: with the naive `\[([^\]]+)\]`, a run like "[[[[[..." made every '['
+# rescan to the end of the input before failing, which is quadratic - a 40 KB
+# paste took seconds of CPU on an unauthenticated endpoint. Excluding '[' makes
+# each scan stop at the next '[', so matching is linear.
+BLANK_VAR_RE = re.compile(r'\[([^\[\]]+)\]')
+
 def extract_points(text, default="1"):
     """
     Extracts points from a string in various formats:

@@ -5,11 +5,17 @@ import zipfile
 import requests
 import os
 import urllib.parse
+from werkzeug.exceptions import HTTPException
 from ..utils.parser import parse_quiz_text
 from ..utils.exporter import create_qti_1_2_package
 from ..utils.file_reader import read_file
 
 api_bp = Blueprint('api', __name__)
+
+# (connect, read) timeouts for Canvas calls. Without them a slow or unreachable
+# Canvas pins a worker thread indefinitely, and the app runs with few threads.
+CANVAS_API_TIMEOUT = (5, 30)
+CANVAS_UPLOAD_TIMEOUT = (5, 120)
 
 def _sanitize_filename(title):
     """Strip characters that are unsafe in filenames or Content-Disposition headers."""
@@ -61,6 +67,8 @@ def preview():
             data = request.get_json(silent=True) or {}
             parsed_questions = parse_quiz_text(data.get("quiz_text", ""))
         return jsonify({"questions": parsed_questions})
+    except HTTPException:
+        raise  # e.g. 413 request too large: let Flask's handler answer, not a 500
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
@@ -87,6 +95,8 @@ def download():
         return Response(zip_bytes, mimetype="application/zip", headers={
             "Content-Disposition": f'attachment; filename="{title}_package.zip"'
         })
+    except HTTPException:
+        raise
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
@@ -136,7 +146,7 @@ def canvas():
             }
         }
         
-        mig_res = requests.post(mig_url, json=mig_payload, headers=headers)
+        mig_res = requests.post(mig_url, json=mig_payload, headers=headers, timeout=CANVAS_API_TIMEOUT)
         
         # If Canvas says the token is invalid/expired, clear it and ask for re-auth
         if mig_res.status_code == 401:
@@ -163,7 +173,8 @@ def canvas():
             upload_url,
             data=upload_params,
             files=files,
-            allow_redirects=False
+            allow_redirects=False,
+            timeout=CANVAS_UPLOAD_TIMEOUT,
         )
 
         # If Canvas says the token is invalid/expired during upload, clear it and ask for re-auth
@@ -188,6 +199,10 @@ def canvas():
             "progress_url": progress_url
         })
         
+    except HTTPException:
+        raise
+    except requests.exceptions.Timeout:
+        return jsonify({"error": "Canvas took too long to respond. Please try again in a moment."}), 504
     except requests.exceptions.HTTPError as e:
         error_msg = e.response.text if hasattr(e.response, 'text') else str(e)
         return jsonify({"error": f"Canvas API Error: {error_msg}"}), 500
@@ -215,9 +230,11 @@ def proxy_progress():
         return jsonify({"error": "Invalid progress URL"}), 400
         
     try:
-        res = requests.get(progress_url, headers={"Authorization": f"Bearer {access_token}"})
+        res = requests.get(progress_url, headers={"Authorization": f"Bearer {access_token}"}, timeout=CANVAS_API_TIMEOUT)
         res.raise_for_status()
         return jsonify(res.json())
+    except requests.exceptions.Timeout:
+        return jsonify({"error": "Canvas took too long to respond. Please try again."}), 504
     except requests.exceptions.RequestException as e:
         return jsonify({"error": str(e)}), 500
 

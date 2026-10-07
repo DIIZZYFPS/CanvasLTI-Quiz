@@ -1,5 +1,5 @@
 import re
-from .text_utils import extract_points, _clean_points_text
+from .text_utils import extract_points, _clean_points_text, BLANK_VAR_RE
 from .respondus_parser import (
     detect_respondus_format, 
     parse_respondus_mcq, 
@@ -233,35 +233,44 @@ def _parse_essay(line, index):
         "points": points
     }
 
+def _split_core_fmb(line):
+    """Split a block into (stem, answer_section_or_None, bracketed_variables)."""
+    parts = re.split(r'Answers?:', line, maxsplit=1, flags=re.IGNORECASE)
+    stem = _clean_points_text(parts[0].strip())
+    answer_section = parts[1] if len(parts) > 1 else None
+    return stem, answer_section, BLANK_VAR_RE.findall(stem)
+
+def _is_core_fmb(variables, answer_section):
+    """
+    Decide whether a block that contains [brackets] is really a
+    Fill-in-Multiple-Blanks question, rather than a question that merely
+    mentions brackets in its text (e.g. "What does arr[0] return?").
+
+    It is an FMB when it has bracketed variables and either
+      - no answer section (auto-blank: "The capital of [France] is [Paris]."), or
+      - an answer section of "name: value" pairs ("Answers: color: red").
+    A plain "Answer: B" / "Answer: first element" is a different question type.
+    """
+    if not variables:
+        return False
+    return answer_section is None or ':' in answer_section
+
 def _parse_core_fmb(line, index):
     """
     Parses a Core-style Fill-in-Multiple-Blanks.
     Syntax: The [a] is [b]. a: red, b: blue
+    Returns None when the block isn't an FMB (see _is_core_fmb).
     """
     points = extract_points(line)
-    
-    # Split question from answers
-    # Use a separator like ":" or "Answers:"
-    parts = re.split(r'Answers?:', line, flags=re.IGNORECASE)
-    if len(parts) < 2:
-        # Try finding key: value pairs directly
-        question_text = line
-        kv_pairs = []
-    else:
-        question_text = parts[0].strip()
-        kv_pairs = [p.strip() for p in parts[1].split(',') if p.strip()]
 
-    question_text = _clean_points_text(question_text)
-    
-    # Extract variables
-    variables = re.findall(r'\[([^\]]+)\]', question_text)
-    if not variables:
-        return None # Not an FMB
+    question_text, answer_section, variables = _split_core_fmb(line)
+    if not _is_core_fmb(variables, answer_section):
+        return None
 
     answer_map = {}
-    if len(parts) >= 2:
+    if answer_section is not None:
         # User provided an "Answers:" line, use it for mapping
-        for pair in kv_pairs:
+        for pair in (p.strip() for p in answer_section.split(',') if p.strip()):
             if ':' in pair:
                 key, val = pair.split(':', 1)
                 answer_map[key.strip().lower()] = [val.strip()]
@@ -357,16 +366,25 @@ def parse_quiz_text(text_input):
                 full_block_text = " ".join(lines)
                 full_lower = full_block_text.lower()
             
-            # Check for Multiple Blanks first (Core)
-            fmb_data = _parse_core_fmb(full_block_text, i)
-            if fmb_data:
-                question_data = fmb_data
-            elif full_lower.startswith("tf:") or full_lower.startswith("true/false:"):
+            # Explicit type markers win over everything else. The [Short Answer]
+            # and [Essay] tags are themselves bracketed, so they must be checked
+            # before the fill-in-multiple-blanks heuristic would mistake them
+            # for blank variables.
+            is_tf = full_lower.startswith("tf:") or full_lower.startswith("true/false:")
+            is_sa = full_lower.startswith("sa:") or "[short answer]" in full_lower
+            is_essay = full_lower.startswith("essay:") or "[essay]" in full_lower
+            fmb_data = None
+            if not (is_tf or is_sa or is_essay):
+                fmb_data = _parse_core_fmb(full_block_text, i)
+
+            if is_tf:
                 question_data = _parse_true_false(lines, i)
-            elif full_lower.startswith("sa:") or "[short answer]" in full_lower:
+            elif is_sa:
                 question_data = _parse_short_answer(full_block_text, i)
-            elif full_lower.startswith("essay:") or "[essay]" in full_lower:
+            elif is_essay:
                 question_data = _parse_essay(full_block_text, i)
+            elif fmb_data:
+                question_data = fmb_data
             elif re.search(r'_{2,}', full_block_text) and "answer:" in full_lower:
                 question_data = _parse_fill_in_the_blank(full_block_text, i)
             elif "answer:" in full_lower and re.search(r'\n\s*[A-Z]\)', "\n"+"\n".join(lines), re.IGNORECASE):

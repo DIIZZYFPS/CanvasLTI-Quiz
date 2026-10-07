@@ -1,5 +1,5 @@
 import re
-from .text_utils import extract_points, _clean_points_text
+from .text_utils import extract_points, _clean_points_text, BLANK_VAR_RE
 
 def detect_respondus_format(text):
     """
@@ -167,7 +167,7 @@ def parse_respondus_fmb(lines, i, points):
     question_text = _clean_points_text(" ".join(question_lines).strip())
     
     # Extract variables from brackets in text
-    variables = re.findall(r'\[([^\]]+)\]', question_text)
+    variables = BLANK_VAR_RE.findall(question_text)
     if not variables:
         return {"id": f"error_{i}", "type": "error", "question_text": question_text, "error": "No bracketed variables found in FMB question (e.g. [color])."}
     

@@ -1,13 +1,21 @@
 import os
 import warnings
 from datetime import timedelta
-from flask import Flask, render_template, send_from_directory
+from flask import Flask, jsonify, render_template, send_from_directory
 from flask_caching import Cache
 from dotenv import load_dotenv
 
 load_dotenv()
 
 _DEFAULT_SECRET_KEY = "replace-me-in-production"
+
+# Largest request body accepted (quiz uploads and pasted text). /preview and
+# /download are unauthenticated and parse the body in memory, so this bounds the
+# work a single request can cause. Override with MAX_UPLOAD_MB.
+try:
+    MAX_UPLOAD_MB = max(1, int(os.getenv("MAX_UPLOAD_MB", "10")))
+except ValueError:
+    MAX_UPLOAD_MB = 10
 
 # Initialize cache globally so it can be used by other modules via 'from app import cache'
 cache = Cache()
@@ -47,7 +55,8 @@ def create_app():
         "SESSION_COOKIE_SECURE": True,
         "SESSION_COOKIE_SAMESITE": 'None',
         "DEBUG_TB_INTERCEPT_REDIRECTS": False,
-        "PERMANENT_SESSION_LIFETIME": timedelta(hours=1)
+        "PERMANENT_SESSION_LIFETIME": timedelta(hours=1),
+        "MAX_CONTENT_LENGTH": MAX_UPLOAD_MB * 1024 * 1024,
     })
 
     cache.init_app(app)
@@ -61,6 +70,10 @@ def create_app():
     app.register_blueprint(api_bp, url_prefix='/api')
     app.register_blueprint(lti_bp)
     app.register_blueprint(auth_bp)
+
+    @app.errorhandler(413)
+    def request_too_large(_error):
+        return jsonify({"error": f"That upload is too large. The maximum size is {MAX_UPLOAD_MB} MB."}), 413
 
     # Legacy static assets route
     @app.route('/assets/<path:filename>')

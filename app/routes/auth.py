@@ -63,7 +63,10 @@ def auth_callback():
         'code': code
     }
     
-    response = requests.post(f"{CANVAS_DOMAIN}/login/oauth2/token", data=payload)
+    try:
+        response = requests.post(f"{CANVAS_DOMAIN}/login/oauth2/token", data=payload, timeout=(5, 30))
+    except requests.exceptions.RequestException:
+        return jsonify({"error": "Could not reach Canvas to finish authorization. Please close this window and relaunch the tool."}), 502
 
     if not response.ok:
         return jsonify({"error": "Token exchange failed", "details": response.text}), 400
