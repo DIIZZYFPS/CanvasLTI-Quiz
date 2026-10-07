@@ -593,3 +593,130 @@ def test_progress_proxy_without_a_session_is_401(client, monkeypatch):
     monkeypatch.setenv("CANVAS_DOMAIN", "https://canvas.example.com")
     res = client.get("/api/proxy/progress", query_string={"id": "1"}, base_url="https://localhost")
     assert res.status_code == 401
+
+
+# --- preview carries source ranges -------------------------------------------
+
+def test_preview_includes_source_ranges(client):
+    text = VALID + "\n\n" + BROKEN
+    body = _post_json(client, "/api/preview", quiz_text=text).get_json()
+    sources = [q["source"] for q in body["questions"]]
+    assert [text[s["start"]:s["end"]] for s in sources] == [VALID, BROKEN]
+
+
+# --- /api/session ------------------------------------------------------------
+
+def _session(client):
+    res = client.get("/api/session", base_url="https://localhost")
+    assert res.status_code == 200
+    assert res.headers["Cache-Control"] == "no-store"
+    return res.get_json()["canvas"]
+
+
+def test_session_for_an_anonymous_visitor_is_standalone(client):
+    assert _session(client) == {"connected": False, "course_id": None}
+
+
+def test_session_reports_connection_and_course_after_login(client):
+    _login(client)
+    assert _session(client) == {"connected": True, "course_id": "42"}
+
+
+def test_session_never_exposes_the_token(client):
+    _login(client)
+    body = client.get("/api/session", base_url="https://localhost").get_data(as_text=True)
+    assert "tok" not in body.replace("token", "")   # the literal secret value used by _login
+    assert "canvas_api_token" not in body
+
+
+def test_session_expired_token_reads_as_disconnected_but_keeps_the_course(client):
+    """The case the UI must show truthfully: launched from a course, but the token is gone."""
+    with client.session_transaction(base_url="https://localhost") as sess:
+        sess[SESSION_KEY] = "a-plaintext-token-from-an-old-cookie"   # not decryptable
+        sess["canvas_course_id"] = "42"
+    assert _session(client) == {"connected": False, "course_id": "42"}
+
+
+def test_session_after_a_401_from_canvas_reads_as_disconnected(client, monkeypatch):
+    import requests
+
+    monkeypatch.setenv("CANVAS_DOMAIN", "https://canvas.example.com")
+    monkeypatch.setattr(requests, "post", lambda *a, **k: _FakeResponse(401))
+    _login(client)
+    assert _post_json(client, "/api/canvas", quiz_title="Q", quiz_text=VALID).status_code == 401
+    assert _session(client) == {"connected": False, "course_id": "42"}
+
+
+def test_session_hides_a_course_id_that_is_not_numeric(client):
+    with client.session_transaction(base_url="https://localhost") as sess:
+        sess["canvas_course_id"] = "6d1c2e5a-aaaa-bbbb-cccc-0123456789ab"
+    assert _session(client)["course_id"] is None
+
+
+# --- /api/canvas accepts an uploaded file ------------------------------------
+
+def _post_file(client, path, filename, content, **fields):
+    data = {"file": (io.BytesIO(content), filename), **fields}
+    return client.post(path, data=data, content_type="multipart/form-data", base_url="https://localhost")
+
+
+def test_canvas_accepts_an_uploaded_file(client, monkeypatch):
+    """Regression: only /preview and /download took uploads, so a previewed file could not be
+    sent to Canvas and the UI had to refuse the export after the user had already reviewed it."""
+    import requests
+
+    monkeypatch.setenv("CANVAS_DOMAIN", "https://canvas.example.com")
+    sent = {}
+
+    def fake_post(url, **kwargs):
+        if url.endswith("/content_migrations"):
+            sent["url"] = url
+            return _FakeResponse(200, {"pre_attachment": {"upload_url": "https://upload.example.com/x", "upload_params": {}},
+                                       "progress_url": "https://canvas.example.com/api/v1/progress/5"})
+        sent["zip"] = kwargs["files"]["file"][1]
+        return _FakeResponse(201)
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    _login(client)
+
+    res = _post_file(client, "/api/canvas", "quiz.txt", (VALID + "\n\n" + VALID).encode(),
+                     quiz_title="From File", course_id="777")
+    assert res.status_code == 200
+    assert res.get_json()["progress_id"] == "5"
+    assert sent["url"].endswith("/courses/777/content_migrations")
+    xml = zipfile.ZipFile(io.BytesIO(sent["zip"])).read("quiz.qti.xml").decode()
+    assert xml.count("<item ") == 2 and 'title="From File"' in xml
+
+
+def test_canvas_upload_with_errors_is_refused_before_canvas(client, monkeypatch):
+    import requests
+
+    monkeypatch.setenv("CANVAS_DOMAIN", "https://canvas.example.com")
+    monkeypatch.setattr(requests, "post", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no Canvas call")))
+    _login(client)
+    res = _post_file(client, "/api/canvas", "quiz.txt", (VALID + "\n\n" + BROKEN).encode(), quiz_title="Q")
+    assert res.status_code == 400
+    assert "Question 2" in res.get_json()["error"]
+
+
+def test_canvas_multipart_without_a_file_is_a_400(client, monkeypatch):
+    monkeypatch.setenv("CANVAS_DOMAIN", "https://canvas.example.com")
+    _login(client)
+    res = client.post("/api/canvas", data={"quiz_title": "Q"}, content_type="multipart/form-data", base_url="https://localhost")
+    assert res.status_code == 400
+    assert "No file" in res.get_json()["error"]
+
+
+def test_canvas_upload_needs_a_session_like_the_json_form(client):
+    res = _post_file(client, "/api/canvas", "quiz.txt", VALID.encode(), quiz_title="Q", course_id="42")
+    assert res.status_code == 401
+
+
+def test_canvas_upload_rejects_a_bad_course_id_field(client, monkeypatch):
+    import requests
+
+    monkeypatch.setenv("CANVAS_DOMAIN", "https://canvas.example.com")
+    monkeypatch.setattr(requests, "post", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no Canvas call")))
+    _login(client)
+    res = _post_file(client, "/api/canvas", "quiz.txt", VALID.encode(), quiz_title="Q", course_id="42/../x")
+    assert res.status_code == 400

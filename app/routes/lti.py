@@ -3,7 +3,7 @@ import urllib.parse
 from pylti1p3.contrib.flask import FlaskOIDCLogin, FlaskRequest, FlaskMessageLaunch
 from pylti1p3.tool_config import ToolConfJsonFile
 from ..utils.lti_utils import get_lti_config_path, get_launch_data_storage, ExtendedFlaskMessageLaunch
-from ..utils.render_utils import _render_with_globals, clean_course_id
+from ..utils.render_utils import clean_course_id
 from ..utils.session_tokens import has_canvas_token
 
 lti_bp = Blueprint('lti', __name__)

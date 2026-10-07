@@ -2,7 +2,7 @@ import os
 import secrets
 import warnings
 from datetime import timedelta
-from flask import Flask, jsonify, render_template, send_from_directory
+from flask import Flask, jsonify, send_from_directory
 from flask_caching import Cache
 from dotenv import load_dotenv
 
@@ -92,9 +92,8 @@ def create_app():
          an LTI or API route will be served the index.html file, allowing
         React Router to handle the frontend routing.
         """
-        from .utils.vite_manifest import get_vite_assets
-        vite_js_asset, vite_css_asset = get_vite_assets()
-        return render_template('index.html', vite_js_asset=vite_js_asset, vite_css_asset=vite_css_asset)
+        from .utils.render_utils import render_app
+        return render_app()
 
     return app
 

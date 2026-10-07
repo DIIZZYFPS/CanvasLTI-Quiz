@@ -305,15 +305,40 @@ def _parse_core_fmb(line, index):
         "points": points
     }
 
+_BLOCK_SEPARATOR_RE = re.compile(r'\n\s*\n')
+
+def _split_blocks(text):
+    """Split `text` into blank-line-separated blocks, yielding (block, start, end).
+
+    Yields the same blocks as re.split(sep, text.strip()). start/end are offsets into
+    `text` itself covering just the block's own non-blank characters, so a client can
+    point at (e.g. select) a question in the very text it sent.
+    """
+    stripped_start = len(text) - len(text.lstrip())
+    stripped = text.strip()
+
+    spans, pos = [], 0
+    for match in _BLOCK_SEPARATOR_RE.finditer(stripped):
+        spans.append((pos, match.start()))
+        pos = match.end()
+    spans.append((pos, len(stripped)))
+
+    for lo, hi in spans:
+        block = stripped[lo:hi]
+        lead = len(block) - len(block.lstrip())
+        trail = len(block) - len(block.rstrip())
+        yield block, stripped_start + lo + lead, stripped_start + hi - trail
+
 def parse_quiz_text(text_input):
     """
     Correctly parses multi-line quiz questions from a single text block.
+
+    Every returned question carries `source: {start, end}`, its character range in
+    `text_input`, so errors can be pointed at in the text the user pasted.
     """
     questions = []
     # Split by one or more blank lines to correctly separate each question block
-    blocks = re.split(r'\n\s*\n', text_input.strip())
-    
-    for i, block in enumerate(blocks):
+    for i, (block, start, end) in enumerate(_split_blocks(text_input)):
         if not block.strip():
             continue
         
@@ -417,6 +442,7 @@ def parse_quiz_text(text_input):
                 }
         
         if question_data:
+            question_data["source"] = {"start": start, "end": end}
             questions.append(question_data)
-            
+
     return questions

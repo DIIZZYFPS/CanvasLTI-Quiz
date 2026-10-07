@@ -4,8 +4,8 @@ import secrets
 import requests
 import urllib.parse
 import os
-from ..utils.render_utils import _render_with_globals, clean_course_id
-from ..utils.session_tokens import has_canvas_token, store_canvas_token
+from ..utils.render_utils import clean_course_id, render_app
+from ..utils.session_tokens import store_canvas_token
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -144,5 +144,6 @@ def auth_callback():
 
 @auth_bp.route('/launch_success')
 def launch_success():
-    course_id = clean_course_id(request.args.get('course_id') or session.get('canvas_course_id', ''))
-    return _render_with_globals('index.html', course_id, has_canvas_token())
+    # The course id in the query string is informational only; the UI reads the real
+    # connection state from GET /api/session.
+    return render_app()

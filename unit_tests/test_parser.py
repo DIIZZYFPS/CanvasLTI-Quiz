@@ -3,6 +3,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+import pytest
+
 from app.utils.parser import parse_quiz_text
 
 
@@ -255,3 +257,62 @@ def test_unbalanced_brackets_do_not_blow_up_runtime():
         start = time.perf_counter()
         parse_quiz_text(payload)
         assert time.perf_counter() - start < 2.0
+
+
+# --- source offsets -----------------------------------------------------------
+# Each question reports where it came from in the text, so the UI can select a broken
+# question in the user's own textarea.
+
+def _slices(text):
+    return [text[q["source"]["start"]:q["source"]["end"]] for q in parse_quiz_text(text)]
+
+
+def test_source_range_is_exactly_the_blocks_text():
+    text = "What is 2+2?\nA) 3\nB) 4\nAnswer: B\n\nTF: The Earth is round.\nAnswer: True"
+    assert _slices(text) == [
+        "What is 2+2?\nA) 3\nB) 4\nAnswer: B",
+        "TF: The Earth is round.\nAnswer: True",
+    ]
+
+
+@pytest.mark.parametrize("pad_start,pad_end", [("", ""), ("\n\n  ", "\n  \n"), ("   ", "   "), ("\n", "")])
+def test_source_range_ignores_surrounding_whitespace(pad_start, pad_end):
+    body = "SA: What year did WWII end?\nAnswer: 1945"
+    text = pad_start + body + pad_end
+    assert _slices(text) == [body]
+
+
+def test_source_range_with_several_blank_lines_and_indentation():
+    text = "Q1?\nAnswer: a\n\n\n   \n    Q2?\nAnswer: b\n\n  \nQ3?\nAnswer: c  "
+    assert _slices(text) == ["Q1?\nAnswer: a", "Q2?\nAnswer: b", "Q3?\nAnswer: c"]
+
+
+def test_source_range_with_windows_line_endings():
+    text = "Q1?\r\nAnswer: a\r\n\r\nQ2?\r\nAnswer: b"
+    assert _slices(text) == ["Q1?\r\nAnswer: a", "Q2?\r\nAnswer: b"]
+
+
+def test_error_questions_have_a_source_range_too():
+    text = "What is 2+2?\nA) 3\nB) 4\nAnswer: B\n\nWhich is broken\nA) only one\nAnswer: A"
+    questions = parse_quiz_text(text)
+    assert [q["type"] for q in questions] == ["multiple_choice_question", "error"]
+    broken = questions[1]["source"]
+    assert text[broken["start"]:broken["end"]] == "Which is broken\nA) only one\nAnswer: A"
+
+
+def test_source_range_for_respondus_blocks():
+    text = "Type: MC\nCapital of France?\n*A) Paris\nB) Lyon\n\nType: E\nExplain."
+    assert _slices(text) == ["Type: MC\nCapital of France?\n*A) Paris\nB) Lyon", "Type: E\nExplain."]
+
+
+def test_empty_and_whitespace_input_still_yield_no_questions():
+    assert parse_quiz_text("") == []
+    assert parse_quiz_text("  \n\n \n") == []
+
+
+def test_blocks_are_split_exactly_as_before():
+    """The offset-tracking splitter must produce the same blocks as the original re.split."""
+    import re
+    from app.utils.parser import _split_blocks
+    for text in ["a\n\nb", "  a\n \n\n b  ", "\n\na\n\n\n\nb\n\n", "a", "", "x\r\n\r\ny", "a\n  \t\nb"]:
+        assert [b for b, _, _ in _split_blocks(text)] == re.split(r'\n\s*\n', text.strip())

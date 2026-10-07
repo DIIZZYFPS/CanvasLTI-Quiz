@@ -9,7 +9,7 @@ from werkzeug.exceptions import HTTPException
 from ..utils.parser import parse_quiz_text
 from ..utils.exporter import create_qti_1_2_package
 from ..utils.file_reader import read_file
-from ..utils.session_tokens import get_canvas_token, clear_canvas_token
+from ..utils.session_tokens import get_canvas_token, clear_canvas_token, has_canvas_token
 
 api_bp = Blueprint('api', __name__)
 
@@ -127,6 +127,30 @@ def _json_body():
     data = request.get_json(silent=True)
     return data if isinstance(data, dict) else {}
 
+def _is_multipart():
+    return bool(request.content_type and request.content_type.startswith("multipart/form-data"))
+
+
+def _request_fields():
+    """The request's scalar fields: form fields for a multipart upload, the JSON object otherwise."""
+    return request.form if _is_multipart() else _json_body()
+
+
+def _quiz_text_from_request(fields):
+    """The quiz text the client sent: an uploaded file's contents, or the `quiz_text` field.
+
+    One reader for every endpoint, so /preview, /download and /canvas accept exactly the
+    same inputs (previously /canvas took JSON only, so an uploaded file could be previewed
+    and downloaded but not sent to Canvas).
+    """
+    if _is_multipart():
+        file = request.files.get("file")
+        if not file:
+            raise ValueError("No file provided")
+        return read_file(file)
+    return _json_text(fields, "quiz_text")
+
+
 def _json_text(data, key):
     """A string field from a JSON body, rejecting non-string values with a 400-able error."""
     value = data.get(key, "")
@@ -170,16 +194,7 @@ def _build_qti_zip(title, questions):
 @api_bp.route("/preview", methods=['POST'])
 def preview():
     try:
-        if request.content_type and request.content_type.startswith("multipart/form-data"):
-            file = request.files.get("file")
-            if file:
-                content = read_file(file)
-                parsed_questions = parse_quiz_text(content)
-            else:
-                return jsonify({"error": "No file provided"}), 400
-        else:
-            data = _json_body()
-            parsed_questions = parse_quiz_text(_json_text(data, "quiz_text"))
+        parsed_questions = parse_quiz_text(_quiz_text_from_request(_request_fields()))
         return jsonify({"questions": parsed_questions})
     except HTTPException:
         raise  # e.g. 413 request too large: let Flask's handler answer, not a 500
@@ -192,18 +207,9 @@ def preview():
 @api_bp.route("/download", methods=['POST'])
 def download():
     try:
-        if request.content_type and request.content_type.startswith("multipart/form-data"):
-            title = _clean_title(request.form.get("quiz_title", ""))
-            file = request.files.get("file")
-            if file:
-                content = read_file(file)
-                parsed_questions = parse_quiz_text(content)
-            else:
-                return jsonify({"error": "No file provided"}), 400
-        else:
-            data = _json_body()
-            title = _clean_title(data.get("quiz_title"))
-            parsed_questions = parse_quiz_text(_json_text(data, "quiz_text"))
+        fields = _request_fields()
+        title = _clean_title(fields.get("quiz_title"))
+        parsed_questions = parse_quiz_text(_quiz_text_from_request(fields))
 
         zip_bytes = _build_qti_zip(title, parsed_questions)
 
@@ -227,10 +233,10 @@ def download():
 @api_bp.route('/canvas', methods=['POST'])
 def canvas():
     try:
-        data = _json_body()
+        fields = _request_fields()
 
-        # Use course ID from request body if provided, otherwise from session
-        raw_course_id = data.get('course_id') or session.get('canvas_course_id')
+        # Use course ID from the request if provided, otherwise from session
+        raw_course_id = fields.get('course_id') or session.get('canvas_course_id')
         # Always use the Canvas API token from the server-side session only
         access_token = get_canvas_token()
 
@@ -247,8 +253,8 @@ def canvas():
         # migration. Handled here (not by a blanket ValueError handler) because
         # requests' JSONDecodeError is also a ValueError.
         try:
-            title = _clean_title(data.get("quiz_title"))
-            parsed_questions = parse_quiz_text(_json_text(data, "quiz_text"))
+            title = _clean_title(fields.get("quiz_title"))
+            parsed_questions = parse_quiz_text(_quiz_text_from_request(fields))
             zip_content = _build_qti_zip(title, parsed_questions)
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
@@ -379,6 +385,22 @@ def proxy_progress():
     except requests.exceptions.RequestException:
         current_app.logger.exception("Canvas progress check failed")
         return jsonify({"error": "Could not check the upload progress with Canvas."}), 502
+
+@api_bp.route('/session', methods=['GET'])
+def session_info():
+    """What the UI may know about the Canvas connection: whether this browser session holds
+    a usable token, and which course it was launched from. Never the token itself.
+
+    The UI used to infer "Canvas Connected" from a course id injected into the page and kept
+    in sessionStorage, so it kept saying Connected after the server session had expired.
+    The server session is the only source of truth for that.
+    """
+    response = jsonify({"canvas": {
+        "connected": has_canvas_token(),
+        "course_id": _numeric_id(session.get('canvas_course_id')),
+    }})
+    response.headers['Cache-Control'] = 'no-store'
+    return response
 
 @api_bp.route('/instructions')
 def download_instructions():
