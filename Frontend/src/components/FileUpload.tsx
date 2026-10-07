@@ -5,28 +5,27 @@ import { Button } from "./ui/button";
 import { toast } from "sonner";
 
 interface FileUploadProps {
-    // Called with the chosen file, or null when the file is removed.
-    onSubmit: (file: File | null) => void;
+    /** The chosen file. Owned by the parent so it survives switching input modes. */
+    file: File | null;
+    onChange: (file: File | null) => void;
     disabled?: boolean;
 };
 
 const ALLOWED_EXTENSIONS = ['.pdf', '.docx', '.txt', '.md'];
 
-export function FileUpload({ onSubmit, disabled = false }: FileUploadProps) {
+export function FileUpload({ file, onChange, disabled = false }: FileUploadProps) {
 
     const [isDragOver, setIsDragOver] = useState(false);
-    const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
-    const validateAndSelectFile = (file: File) => {
-        const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')).toLowerCase() : '';
+    const validateAndSelectFile = (candidate: File) => {
+        const ext = candidate.name.includes('.') ? candidate.name.slice(candidate.name.lastIndexOf('.')).toLowerCase() : '';
         if (!ALLOWED_EXTENSIONS.includes(ext)) {
             const extLabel = ext ? ` '${ext}'` : '';
             toast.error(`Unsupported file type${extLabel}. Please select a .pdf, .docx, .txt, or .md file.`);
             return false;
         }
-        setSelectedFile(file);
-        onSubmit(file);
+        onChange(candidate);
         return true;
     };
 
@@ -41,7 +40,7 @@ export function FileUpload({ onSubmit, disabled = false }: FileUploadProps) {
     }
     const handleDragOver = (e: React.DragEvent) => {
         e.preventDefault();
-        setIsDragOver(true);
+        if (!disabled) setIsDragOver(true);
     };
 
     const handleDragLeave = () => {
@@ -53,11 +52,8 @@ export function FileUpload({ onSubmit, disabled = false }: FileUploadProps) {
         if (files && files.length > 0) {
             validateAndSelectFile(files[0]);
         }
-    };
-
-    const removeFile = () => {
-        setSelectedFile(null);
-        onSubmit(null);
+        // Allow choosing the same file again after removing it.
+        e.target.value = "";
     };
 
   return (
@@ -65,29 +61,29 @@ export function FileUpload({ onSubmit, disabled = false }: FileUploadProps) {
       className={cn(
         "border-2 border-dashed rounded-lg p-8 text-center transition-colors",
         isDragOver ? "border-primary bg-primary/5" : "border-border",
-        selectedFile && "border-primary/50 bg-primary/5"
+        file && "border-primary/50 bg-primary/5"
       )}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
     >
-      {selectedFile ? (
+      {file ? (
         <div className="flex items-center justify-between p-4 bg-background rounded-lg">
-            <div className="flex items-center gap-3">
-                <FileIcon className="h-6 w-6 text-primary" aria-hidden="true" />
-                <div className="text-left">
-                    <p className="font-medium">{selectedFile.name}</p>
+            <div className="flex items-center gap-3 min-w-0">
+                <FileIcon className="h-6 w-6 shrink-0 text-primary" aria-hidden="true" />
+                <div className="text-left min-w-0">
+                    <p className="font-medium truncate">{file.name}</p>
                     <p className="text-sm text-muted-foreground">
-                        {(selectedFile.size / 1024).toFixed(2)} KB
+                        {(file.size / 1024).toFixed(2)} KB
                         </p>
                 </div>
             </div>
             <Button
                 variant="ghost"
                 size="sm"
-                onClick={removeFile}
+                onClick={() => onChange(null)}
                 disabled={disabled}
-                aria-label={`Remove ${selectedFile.name}`}
+                aria-label={`Remove ${file.name}`}
                 className="text-destructive hover:bg-destructive/10 hover:text-destructive"
             >
                 <X className="h-4 w-4" aria-hidden="true" />
