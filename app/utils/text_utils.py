@@ -57,26 +57,38 @@ def join_docx_paragraphs(paragraphs):
 # each scan stop at the next '[', so matching is linear.
 BLANK_VAR_RE = re.compile(r'\[([^\[\]]+)\]')
 
+# The single definition of "this text states a point value". Both extract_points() and
+# _clean_points_text() use it, so what is read as points is exactly what is removed from
+# the question text (they used to be two copies that could drift apart).
+#
+# A bare "Points/Score/Pts" word is only a marker when it is unmistakable - with a colon,
+# inside brackets, in "(N points)" form, or alone on its own line. Without that, ordinary
+# prose such as "point 3 is the vertex" was both read as points and deleted from the question.
+_POINTS_RE = re.compile(
+    r'(?:'
+    r'[\(\[]\s*\b(?:Points?|Score|Pts?)\b:?\s*(?P<bracketed>\d*\.?\d+)\s*[\)\]]'   # [Points: 10], (Score 5)
+    r'|'
+    r'\(\s*(?P<numeric_first>\d*\.?\d+)\s*(?:points?|pts?)\s*\)'                    # (10 points), (5 pts)
+    r'|'
+    r'\b(?:Points?|Score|Pts?)\b\s*:\s*(?P<labelled>\d*\.?\d+)'                      # Points: 10, Score: 2
+    r'|'
+    r'^[ \t]*(?:Points?|Score|Pts?)[ \t]+(?P<own_line>\d*\.?\d+)[ \t]*$'             # "point 2" alone on a line
+    r')',
+    re.IGNORECASE | re.MULTILINE,
+)
+
 def extract_points(text, default="1"):
     """
     Extracts points from a string in various formats:
     - (10 points), (5 pts)
+    - [Points: 10], (Score 5)
     - Points: 10, Score: 10
+    - "point 2" on a line of its own
     Returns the points as a string, e.g., "10".
     """
-    pattern = re.compile(
-        r'(?:'
-        r'[\(\[]\s*\b(?:Points?|Score|Pts?)\b:?\s*(?P<label_bracketed>\d*\.?\d+)\s*[\)\]]'  # [Points: 10], (Score 5)
-        r'|'
-        r'\b(?:Points?|Score|Pts?)\b:?\s*(?P<label>\d*\.?\d+)'                              # Points: 10
-        r'|'
-        r'\(\s*(?P<numeric_first>\d*\.?\d+)\s*(?:points?|pts?)\s*\)'                        # (10 points), (5 pts)
-        r')',
-        re.IGNORECASE,
-    )
-    match = pattern.search(text)
+    match = _POINTS_RE.search(text)
     if match:
-        for group_name in ("label_bracketed", "label", "numeric_first"):
+        for group_name in ("bracketed", "numeric_first", "labelled", "own_line"):
             value = match.group(group_name)
             if value is not None:
                 return value
@@ -84,15 +96,4 @@ def extract_points(text, default="1"):
 
 def _clean_points_text(text):
     """Removes the points string from the question text to clean it up."""
-    return re.sub(
-        r'(?:'
-        r'[\(\[]\s*\b(?:Points?|Score|Pts?)\b:?\s*\d*\.?\d+\s*[\)\]]'   # [Points: 10], (Score 5)
-        r'|'
-        r'\b(?:Points?|Score|Pts?)\b:?\s*\d*\.?\d+'                    # Points: 10
-        r'|'
-        r'\(\s*\d*\.?\d+\s*(?:points?|pts?)\s*\)'                      # (10 points), (5 pts)
-        r')',
-        '',
-        text,
-        flags=re.IGNORECASE,
-    ).strip()
+    return _POINTS_RE.sub('', text).strip()
