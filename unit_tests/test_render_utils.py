@@ -3,15 +3,13 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+import pytest
 from flask import Flask
 
-from app.utils.render_utils import _render_with_globals, clean_course_id
+from app import app as flask_app
+from app.utils.render_utils import clean_course_id, render_app
 
 TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), '..', 'app', 'templates')
-
-
-def _make_app():
-    return Flask('test_app', template_folder=TEMPLATE_DIR)
 
 
 def test_clean_course_id_strips_sentinel_values():
@@ -21,47 +19,37 @@ def test_clean_course_id_strips_sentinel_values():
     assert clean_course_id('  123  ') == '123'
 
 
-def test_render_with_globals_escapes_quote_breakout():
-    """Regression test for a reflected XSS: course_id used to be interpolated
-    raw into an inline <script> tag, so a value like `"};alert(1);//` could
-    break out of the string literal and execute arbitrary JS."""
-    app = _make_app()
-    payload = '"};alert(document.cookie);//'
-    with app.test_request_context():
-        html = _render_with_globals('index.html', payload, None)
+def test_render_app_renders_the_shell_without_request_specific_script():
+    app = Flask('test_app', template_folder=TEMPLATE_DIR)
+    with app.test_request_context('/launch_success?course_id=12345'):
+        html = render_app()
 
-    assert 'window.CANVAS_COURSE_ID' in html
-    # Raw interpolation (the original bug) would produce this exact breakout
-    # sequence right after the opening quote: `""};alert(...)`.
-    assert f'"{payload}";' not in html
-    # The inner quote must be backslash-escaped so it stays inside the JS
-    # string literal instead of terminating it early.
-    assert '\\"};alert(document.cookie);//' in html
-
-
-def test_render_with_globals_escapes_script_tag_breakout():
-    """A payload trying to close the <script> tag early and inject a new one
-    must not result in a real second <script> element in the output."""
-    app = _make_app()
-    payload = '</script><script>alert(1)</script>'
-    with app.test_request_context():
-        html = _render_with_globals('index.html', payload, None)
-
-    assert '</script><script>alert(1)</script>' not in html
-    assert 'alert(1)' in html  # value still present, just neutralized
-
-
-def test_render_with_globals_normal_course_id():
-    app = _make_app()
-    with app.test_request_context():
-        html = _render_with_globals('index.html', '12345', 'some-token')
-
-    assert 'window.CANVAS_COURSE_ID = "12345";' in html
-
-
-def test_render_with_globals_no_course_id_omits_script():
-    app = _make_app()
-    with app.test_request_context():
-        html = _render_with_globals('index.html', '', None)
-
+    assert '<div id="root">' in html
+    # Nothing about the request ends up in the page: the UI asks /api/session instead.
+    assert '12345' not in html
     assert 'CANVAS_COURSE_ID' not in html
+    assert html.count('<script') == 0 or 'window.' not in html
+
+
+@pytest.mark.parametrize("payload", [
+    '"};alert(document.cookie);//',
+    '</script><script>alert(1)</script>',
+    '<img src=x onerror=alert(1)>',
+])
+def test_launch_success_never_reflects_the_course_id_query_param(payload):
+    """Regression: course_id used to be interpolated into an inline <script> (a reflected
+    XSS that needed careful escaping). The sink is gone: the value is not rendered at all."""
+    client = flask_app.test_client()
+    res = client.get('/launch_success', query_string={'course_id': payload}, base_url='https://localhost')
+    assert res.status_code == 200
+    body = res.get_data(as_text=True)
+    assert 'alert(' not in body
+    assert 'CANVAS_COURSE_ID' not in body
+    assert '<div id="root">' in body
+
+
+def test_root_and_unknown_paths_serve_the_same_shell():
+    client = flask_app.test_client()
+    for path in ('/', '/some/client/route'):
+        body = client.get(path, base_url='https://localhost').get_data(as_text=True)
+        assert '<div id="root">' in body

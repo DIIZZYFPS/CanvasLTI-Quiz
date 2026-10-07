@@ -23,6 +23,11 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-text: var(--destructive-text);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -50,7 +55,7 @@
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.141 0.005 285.823);
   --primary: oklch(28.502% 0.00003 271.15268);
-  --primary-foreground: oklch(0.421 0.095 57.708);
+  --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.967 0.001 286.375);
   --secondary-foreground: oklch(0.21 0.006 285.885);
   --muted: oklch(0.967 0.001 286.375);
@@ -58,6 +63,14 @@
   --accent: oklch(0.967 0.001 286.375);
   --accent-foreground: oklch(0.21 0.006 285.885);
   --destructive: oklch(0.577 0.245 27.325);
+  /* Status colours. Text-on-tint pairs are chosen to clear WCAG AA (4.5:1).
+     --destructive is tuned for solid fills; this darker shade is for error TEXT on the
+     pale destructive tints (alerts), where --destructive itself falls just short. */
+  --destructive-text: oklch(0.45 0.185 27);
+  --success: oklch(0.508 0.118 165.612);
+  --success-foreground: oklch(0.979 0.021 166.113);
+  --warning: oklch(0.473 0.137 46.201);
+  --warning-foreground: oklch(0.987 0.022 95.277);
   --border: oklch(0.92 0.004 286.32);
   --input: oklch(0.92 0.004 286.32);
   --ring: oklch(0.795 0.184 86.047);
@@ -84,7 +97,9 @@
   --popover: oklch(0.21 0.006 285.885);
   --popover-foreground: oklch(0.985 0 0);
   --primary: oklch(0.795 0.184 86.047);
-  --primary-foreground: oklch(0.421 0.095 57.708);
+  /* Was a mid brown that only just cleared AA on the amber (4.5:1) and fell to ~3.7:1 on hover,
+     where the button is 90% opacity. A darker brown keeps the hue and clears AA in both states. */
+  --primary-foreground: oklch(0.279 0.077 45.635);
   --secondary: oklch(0.274 0.006 286.033);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.274 0.006 286.033);
@@ -92,6 +107,11 @@
   --accent: oklch(0.274 0.006 286.033);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
+  --destructive-text: oklch(0.78 0.13 22);
+  --success: oklch(0.765 0.177 163.223);
+  --success-foreground: oklch(0.262 0.051 172.552);
+  --warning: oklch(0.828 0.189 84.429);
+  --warning-foreground: oklch(0.279 0.077 45.635);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.554 0.135 66.442);

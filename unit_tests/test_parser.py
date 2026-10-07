@@ -3,6 +3,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+import pytest
+
 from app.utils.parser import parse_quiz_text
 
 
@@ -175,3 +177,142 @@ def test_multiple_blocks_require_blank_line_separator():
     assert len(questions) == 2
     assert questions[0]["type"] == "true_false_question"
     assert questions[1]["type"] == "short_answer_question"
+
+
+# --- Brackets in question text (regression) ---------------------------------
+# The fill-in-multiple-blanks check used to run first and treat *any* [brackets]
+# as blanks, which broke the documented [Essay]/[Short Answer] tags and any
+# question mentioning something like arr[0].
+
+def test_bracket_short_answer_tag_is_short_answer_not_fmb():
+    q = _only(parse_quiz_text("What is 2+2? [Short Answer]\nAnswer: 4"))
+    assert q["type"] == "short_answer_question"
+    assert q["answers"][0]["text"] == "4"
+    assert "[Short Answer]" not in q["question_text"]
+
+
+def test_bracket_essay_tag_at_end_is_essay_not_fmb():
+    """The formatting guide documents ending a question with [Essay]."""
+    q = _only(parse_quiz_text("Explain recursion. [Essay]"))
+    assert q["type"] == "essay_question"
+    assert "[Essay]" not in q["question_text"]
+
+
+def test_bracket_essay_prefix_with_brackets_in_text():
+    q = _only(parse_quiz_text("Essay: Describe how arr[0] differs from arr[1]."))
+    assert q["type"] == "essay_question"
+
+
+def test_bracket_in_mc_stem_stays_multiple_choice():
+    text = "What does arr[0] return in JavaScript?\nA) The first element\nB) The last element\nAnswer: A"
+    q = _only(parse_quiz_text(text))
+    assert q["type"] == "multiple_choice_question"
+    correct = next(a for a in q["answers"] if a["id"] == q["correct_answer_id"])
+    assert correct["text"] == "The first element"
+
+
+def test_bracket_in_multi_answer_stem_stays_multiple_answers():
+    text = "Which of these index list[0]?\nA) list[0]\nB) list[1]\nC) first(list)\nAnswer: A, C"
+    q = _only(parse_quiz_text(text))
+    assert q["type"] == "multiple_answers_question"
+    assert len(q["correct_answer_ids"]) == 2
+
+
+def test_bracket_in_tf_stem_stays_true_false():
+    q = _only(parse_quiz_text("TF: In Python, a list is written [1, 2].\nAnswer: True"))
+    assert q["type"] == "true_false_question"
+
+
+def test_bracket_in_short_answer_stem_without_tag():
+    q = _only(parse_quiz_text("What does arr[0] return?\nAnswer: the first element"))
+    assert q["type"] == "short_answer_question"
+    assert q["answers"][0]["text"] == "the first element"
+
+
+def test_bracket_points_marker_is_not_a_blank():
+    q = _only(parse_quiz_text("What is a list? [Points: 2]\nAnswer: a sequence"))
+    assert q["type"] == "short_answer_question"
+    assert q["points"] == "2"
+
+
+def test_fmb_typo_in_variable_name_still_gets_helpful_error():
+    """A mistyped variable must keep producing the specific FMB error rather
+    than silently falling through to a short-answer question."""
+    q = _only(parse_quiz_text("The [colour] sky.\nAnswers: color: blue"))
+    assert q["type"] == "error"
+    assert "colour" in q["error"]
+
+
+def test_respondus_fmb_still_parses():
+    q = _only(parse_quiz_text("Type: FMB\nThe [a] is red.\na = Roses"))
+    assert q["type"] == "fill_in_multiple_blanks_question"
+    assert q["variables"]["a"] == ["Roses"]
+
+
+def test_unbalanced_brackets_do_not_blow_up_runtime():
+    """Regression: `\\[([^\\]]+)\\]` was quadratic on runs of '[' (40k chars took
+    seconds; 160k about a minute) on an unauthenticated endpoint."""
+    import time
+    for payload in ("[" * 200_000, "[a" * 100_000, "Type: FMB\n" + "[" * 100_000):
+        start = time.perf_counter()
+        parse_quiz_text(payload)
+        assert time.perf_counter() - start < 2.0
+
+
+# --- source offsets -----------------------------------------------------------
+# Each question reports where it came from in the text, so the UI can select a broken
+# question in the user's own textarea.
+
+def _slices(text):
+    return [text[q["source"]["start"]:q["source"]["end"]] for q in parse_quiz_text(text)]
+
+
+def test_source_range_is_exactly_the_blocks_text():
+    text = "What is 2+2?\nA) 3\nB) 4\nAnswer: B\n\nTF: The Earth is round.\nAnswer: True"
+    assert _slices(text) == [
+        "What is 2+2?\nA) 3\nB) 4\nAnswer: B",
+        "TF: The Earth is round.\nAnswer: True",
+    ]
+
+
+@pytest.mark.parametrize("pad_start,pad_end", [("", ""), ("\n\n  ", "\n  \n"), ("   ", "   "), ("\n", "")])
+def test_source_range_ignores_surrounding_whitespace(pad_start, pad_end):
+    body = "SA: What year did WWII end?\nAnswer: 1945"
+    text = pad_start + body + pad_end
+    assert _slices(text) == [body]
+
+
+def test_source_range_with_several_blank_lines_and_indentation():
+    text = "Q1?\nAnswer: a\n\n\n   \n    Q2?\nAnswer: b\n\n  \nQ3?\nAnswer: c  "
+    assert _slices(text) == ["Q1?\nAnswer: a", "Q2?\nAnswer: b", "Q3?\nAnswer: c"]
+
+
+def test_source_range_with_windows_line_endings():
+    text = "Q1?\r\nAnswer: a\r\n\r\nQ2?\r\nAnswer: b"
+    assert _slices(text) == ["Q1?\r\nAnswer: a", "Q2?\r\nAnswer: b"]
+
+
+def test_error_questions_have_a_source_range_too():
+    text = "What is 2+2?\nA) 3\nB) 4\nAnswer: B\n\nWhich is broken\nA) only one\nAnswer: A"
+    questions = parse_quiz_text(text)
+    assert [q["type"] for q in questions] == ["multiple_choice_question", "error"]
+    broken = questions[1]["source"]
+    assert text[broken["start"]:broken["end"]] == "Which is broken\nA) only one\nAnswer: A"
+
+
+def test_source_range_for_respondus_blocks():
+    text = "Type: MC\nCapital of France?\n*A) Paris\nB) Lyon\n\nType: E\nExplain."
+    assert _slices(text) == ["Type: MC\nCapital of France?\n*A) Paris\nB) Lyon", "Type: E\nExplain."]
+
+
+def test_empty_and_whitespace_input_still_yield_no_questions():
+    assert parse_quiz_text("") == []
+    assert parse_quiz_text("  \n\n \n") == []
+
+
+def test_blocks_are_split_exactly_as_before():
+    """The offset-tracking splitter must produce the same blocks as the original re.split."""
+    import re
+    from app.utils.parser import _split_blocks
+    for text in ["a\n\nb", "  a\n \n\n b  ", "\n\na\n\n\n\nb\n\n", "a", "", "x\r\n\r\ny", "a\n  \t\nb"]:
+        assert [b for b, _, _ in _split_blocks(text)] == re.split(r'\n\s*\n', text.strip())

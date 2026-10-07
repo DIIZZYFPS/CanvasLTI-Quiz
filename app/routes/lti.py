@@ -1,14 +1,25 @@
-from flask import Blueprint, request, redirect, session, jsonify
+from flask import Blueprint, current_app, redirect, session, jsonify
+import urllib.parse
 from pylti1p3.contrib.flask import FlaskOIDCLogin, FlaskRequest, FlaskMessageLaunch
-from pylti1p3.tool_config import ToolConfJsonFile
-from ..utils.lti_utils import get_lti_config_path, get_launch_data_storage, ExtendedFlaskMessageLaunch
-from ..utils.render_utils import _render_with_globals, clean_course_id
+from pylti1p3.exception import LtiException, OIDCException
+from ..utils.lti_utils import RegisteredToolConf, get_lti_config_path, get_launch_data_storage
+from ..utils.render_utils import clean_course_id
+from ..utils.session_tokens import has_canvas_token
 
 lti_bp = Blueprint('lti', __name__)
 
+@lti_bp.errorhandler(LtiException)
+@lti_bp.errorhandler(OIDCException)
+def invalid_lti_request(error):
+    """A launch or login that doesn't validate (bad signature, replayed nonce, unknown
+    issuer, missing parameters...). Anyone can send these, so answer with a plain 400 and
+    log the reason, rather than a 500 with a stack trace."""
+    current_app.logger.warning("Rejected LTI request: %s", error)
+    return "This launch could not be validated. Please relaunch the tool from Canvas.", 400
+
 @lti_bp.route('/login/', methods=['POST', 'GET'])
 def login():
-    tool_conf = ToolConfJsonFile(get_lti_config_path())
+    tool_conf = RegisteredToolConf(get_lti_config_path())
     launch_data_storage = get_launch_data_storage()
 
     flask_request = FlaskRequest()
@@ -21,10 +32,10 @@ def login():
 
 @lti_bp.route('/launch/', methods=['POST'])
 def launch():
-    tool_conf = ToolConfJsonFile(get_lti_config_path())
+    tool_conf = RegisteredToolConf(get_lti_config_path())
     flask_request = FlaskRequest()
     launch_data_storage = get_launch_data_storage()
-    message_launch = ExtendedFlaskMessageLaunch(request=flask_request, tool_config=tool_conf, launch_data_storage=launch_data_storage)
+    message_launch = FlaskMessageLaunch(request=flask_request, tool_config=tool_conf, launch_data_storage=launch_data_storage)
     launch_data = message_launch.get_launch_data()
 
     # 1. Capture the Course ID from the LTI Launch Claim with robust fallbacks
@@ -49,13 +60,13 @@ def launch():
     session['canvas_course_id'] = course_id
     
     # 3. Check for API Token; if missing, start the SECOND OAuth2 flow (API Key)
-    if 'canvas_api_token' not in session:
-        return redirect(f'/api/auth/canvas?course_id={course_id}')
+    if not has_canvas_token():
+        return redirect('/api/auth/canvas?' + urllib.parse.urlencode({'course_id': course_id}))
 
     # Token already exists — redirect to launch_success GET endpoint to prevent nonce reissue on refresh
-    return redirect(f'/launch_success?course_id={course_id}')
+    return redirect('/launch_success?' + urllib.parse.urlencode({'course_id': course_id}))
 
 @lti_bp.route('/jwks/', methods=['GET'])
 def get_jwks():
-    tool_conf = ToolConfJsonFile(get_lti_config_path())
+    tool_conf = RegisteredToolConf(get_lti_config_path())
     return jsonify(tool_conf.get_jwks())

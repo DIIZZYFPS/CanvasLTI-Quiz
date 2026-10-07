@@ -1,0 +1,7 @@
+# Deliberately minimal: catch real mistakes (unused imports, undefined names, syntax errors)
+# without imposing a style on code that never had a formatter.
+target-version = "py39"
+extend-exclude = ["Frontend", "node_modules"]
+
+[lint]
+select = ["F", "E9"]
