@@ -1,5 +1,6 @@
 import io
 import os
+from .docx_reader import extract_docx_paragraphs
 from .text_utils import join_docx_paragraphs
 
 def read_file(file):
@@ -43,7 +44,9 @@ def read_file(file):
             file_bytes = file.read()
             with io.BytesIO(file_bytes) as file_stream:
                 document = Document(file_stream)
-                paragraphs = [para.text for para in document.paragraphs]
+                # Rebuilds auto-numbered list labels and includes table text; plain
+                # `para.text` has neither (see docx_reader).
+                paragraphs = extract_docx_paragraphs(document)
             return join_docx_paragraphs(paragraphs)
         except Exception as e:
             raise ValueError(f"Failed to parse DOCX document. File may be corrupted or invalid: {str(e)}")
