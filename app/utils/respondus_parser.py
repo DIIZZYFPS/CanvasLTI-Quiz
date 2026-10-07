@@ -158,6 +158,8 @@ def parse_respondus_fmb(lines, i, points):
         if match:
             var = match.group(1).strip().lower()
             val = match.group(2).strip()
+            if not val:  # "a =" with nothing after it is a missing answer
+                continue
             if var not in answer_map:
                 answer_map[var] = []
             answer_map[var].append(val)

@@ -273,7 +273,8 @@ def _parse_core_fmb(line, index):
         for pair in (p.strip() for p in answer_section.split(',') if p.strip()):
             if ':' in pair:
                 key, val = pair.split(':', 1)
-                answer_map[key.strip().lower()] = [val.strip()]
+                if val.strip():  # "color:" with nothing after it is a missing answer
+                    answer_map[key.strip().lower()] = [val.strip()]
     else:
         # AUTO-BLANK: Use the words inside the brackets as the answers
         for var in variables:
