@@ -5,6 +5,7 @@ import requests
 import urllib.parse
 import os
 from ..utils.render_utils import _render_with_globals, clean_course_id
+from ..utils.session_tokens import has_canvas_token, store_canvas_token
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -125,7 +126,7 @@ def auth_callback():
     
     if 'access_token' in token_data:
         session.permanent = True
-        session['canvas_api_token'] = token_data['access_token']
+        store_canvas_token(token_data['access_token'])
         session['canvas_course_id'] = course_id  # Re-store in case session didn't round-trip
         return redirect('/launch_success?' + urllib.parse.urlencode({'course_id': course_id}))
 
@@ -134,4 +135,4 @@ def auth_callback():
 @auth_bp.route('/launch_success')
 def launch_success():
     course_id = clean_course_id(request.args.get('course_id') or session.get('canvas_course_id', ''))
-    return _render_with_globals('index.html', course_id, session.get('canvas_api_token'))
+    return _render_with_globals('index.html', course_id, has_canvas_token())

@@ -4,6 +4,7 @@ from pylti1p3.contrib.flask import FlaskOIDCLogin, FlaskRequest, FlaskMessageLau
 from pylti1p3.tool_config import ToolConfJsonFile
 from ..utils.lti_utils import get_lti_config_path, get_launch_data_storage, ExtendedFlaskMessageLaunch
 from ..utils.render_utils import _render_with_globals, clean_course_id
+from ..utils.session_tokens import has_canvas_token
 
 lti_bp = Blueprint('lti', __name__)
 
@@ -50,7 +51,7 @@ def launch():
     session['canvas_course_id'] = course_id
     
     # 3. Check for API Token; if missing, start the SECOND OAuth2 flow (API Key)
-    if 'canvas_api_token' not in session:
+    if not has_canvas_token():
         return redirect('/api/auth/canvas?' + urllib.parse.urlencode({'course_id': course_id}))
 
     # Token already exists — redirect to launch_success GET endpoint to prevent nonce reissue on refresh

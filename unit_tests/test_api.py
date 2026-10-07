@@ -10,6 +10,7 @@ import pytest
 from app import app as flask_app
 from app.utils.exporter import create_qti_1_2_package
 from app.utils.parser import parse_quiz_text
+from app.utils.session_tokens import SESSION_KEY, encrypt_canvas_token
 
 VALID = "What is 2+2?\nA) 3\nB) 4\nAnswer: B"
 # One option only -> the parser reports an error for this block.
@@ -83,9 +84,7 @@ def test_canvas_rejects_bad_quiz_before_calling_canvas(client, monkeypatch):
     monkeypatch.setattr(requests, "post", boom)
     monkeypatch.setenv("CANVAS_DOMAIN", "https://canvas.example.com")
 
-    with client.session_transaction(base_url="https://localhost") as sess:
-        sess["canvas_api_token"] = "tok"
-        sess["canvas_course_id"] = "42"
+    _login(client)
 
     res = _post_json(client, "/api/canvas", quiz_title="Q", quiz_text=VALID + "\n\n" + BROKEN)
     assert res.status_code == 400
@@ -98,9 +97,7 @@ def test_canvas_rejects_empty_quiz(client, monkeypatch):
     monkeypatch.setattr(requests, "post", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no Canvas call")))
     monkeypatch.setenv("CANVAS_DOMAIN", "https://canvas.example.com")
 
-    with client.session_transaction(base_url="https://localhost") as sess:
-        sess["canvas_api_token"] = "tok"
-        sess["canvas_course_id"] = "42"
+    _login(client)
 
     res = _post_json(client, "/api/canvas", quiz_title="Q", quiz_text="")
     assert res.status_code == 400
@@ -154,8 +151,11 @@ class _FakeResponse:
 
 
 def _login(client):
+    """Put an authorised Canvas session on the client (token stored encrypted, as in the app)."""
+    with flask_app.app_context():
+        blob = encrypt_canvas_token("tok")
     with client.session_transaction(base_url="https://localhost") as sess:
-        sess["canvas_api_token"] = "tok"
+        sess[SESSION_KEY] = blob
         sess["canvas_course_id"] = "42"
 
 

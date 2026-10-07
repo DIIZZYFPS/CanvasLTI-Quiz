@@ -8,6 +8,7 @@ import pytest
 import requests
 
 from app import app as flask_app
+from app.utils.session_tokens import SESSION_KEY, decrypt_canvas_token
 
 BASE = "https://localhost"
 
@@ -115,7 +116,10 @@ def test_valid_flow_completes_and_stores_token(client, token_exchange):
     assert res.headers["Location"] == "/launch_success?course_id=42"
     assert len(token_exchange) == 1
     sess = _session(client)
-    assert sess["canvas_api_token"] == "canvas-token"
+    # Stored encrypted, not as the raw bearer token.
+    assert sess[SESSION_KEY] != "canvas-token"
+    with flask_app.test_request_context():
+        assert decrypt_canvas_token(sess[SESSION_KEY]) == "canvas-token"
     assert sess["canvas_course_id"] == "42"
 
 

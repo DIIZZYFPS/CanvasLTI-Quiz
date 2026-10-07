@@ -6,6 +6,7 @@ python-dotenv
 
 # LTI Libraries
 pylti1p3
+cryptography  # encrypts the Canvas token stored in the session cookie
 
 # Doc Parsing Libraries
 PyMuPDF

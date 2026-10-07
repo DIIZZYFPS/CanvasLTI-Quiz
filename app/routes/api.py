@@ -9,6 +9,7 @@ from werkzeug.exceptions import HTTPException
 from ..utils.parser import parse_quiz_text
 from ..utils.exporter import create_qti_1_2_package
 from ..utils.file_reader import read_file
+from ..utils.session_tokens import get_canvas_token, clear_canvas_token
 
 api_bp = Blueprint('api', __name__)
 
@@ -177,7 +178,7 @@ def canvas():
         # Use course ID from request body if provided, otherwise from session
         course_id = data.get('course_id') or session.get('canvas_course_id')
         # Always use the Canvas API token from the server-side session only
-        access_token = session.get('canvas_api_token')
+        access_token = get_canvas_token()
 
         if not course_id:
             return jsonify({"error": "Missing Canvas Course ID. Please refresh the tool launch."}), 400
@@ -217,7 +218,7 @@ def canvas():
         
         # If Canvas says the token is invalid/expired, clear it and ask for re-auth
         if mig_res.status_code == 401:
-            session.pop('canvas_api_token', None)
+            clear_canvas_token()
             return jsonify({"error": "Canvas token expired. Please close and relaunch the tool."}), 401
         
         mig_res.raise_for_status()
@@ -246,7 +247,7 @@ def canvas():
 
         # If Canvas says the token is invalid/expired during upload, clear it and ask for re-auth
         if upload_res.status_code == 401:
-            session.pop('canvas_api_token', None)
+            clear_canvas_token()
             return jsonify({"error": "Canvas token expired during upload. Please close and relaunch the tool."}), 401
 
         # Treat 2xx as success and 3xx as the expected redirect handoff.
@@ -280,7 +281,7 @@ def canvas():
 def proxy_progress():
     # Helper endpoint for React to poll progress without dealing with CORS.
     # The Canvas token is read from the server-side session only and never from the client.
-    access_token = session.get('canvas_api_token')
+    access_token = get_canvas_token()
     progress_url = request.args.get('url')
     
     if not access_token or not progress_url:

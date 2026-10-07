@@ -1,4 +1,5 @@
 import os
+import secrets
 import warnings
 from datetime import timedelta
 from flask import Flask, jsonify, render_template, send_from_directory
@@ -7,7 +8,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-_DEFAULT_SECRET_KEY = "replace-me-in-production"
+# Placeholder values that have appeared in this repo or its docs. Anyone can read
+# them, so a deployment that copied one must not be allowed to sign sessions with it.
+_KNOWN_PLACEHOLDER_SECRET_KEYS = {"replace-me-in-production", "your_secure_random_flask_secret"}
 
 # Largest request body accepted (quiz uploads and pasted text). /preview and
 # /download are unauthenticated and parse the body in memory, so this bounds the
@@ -24,20 +27,22 @@ def create_app():
     # Use relative paths for static and template folders as they are inside the 'app' package
     app = Flask(__name__, static_folder="assets", template_folder="templates")
     
-    SESSION_DIR = os.getenv('SESSION_FILE_DIR', '/tmp/flask_session')
-    if not os.path.exists(SESSION_DIR):
-        os.makedirs(SESSION_DIR, exist_ok=True)
-
     CACHE_DIR = os.getenv('CACHE_DIR', '/tmp/flask_cache')
     if not os.path.exists(CACHE_DIR):
         os.makedirs(CACHE_DIR, exist_ok=True)
 
-    secret_key = os.getenv("SECRET_KEY", _DEFAULT_SECRET_KEY)
-    if secret_key == _DEFAULT_SECRET_KEY:
+    secret_key = os.getenv("SECRET_KEY")
+    if not secret_key or secret_key in _KNOWN_PLACEHOLDER_SECRET_KEYS:
+        # Never sign sessions with a publicly known key: that lets anyone forge a
+        # session. A random per-process key is safe, but sessions then won't
+        # survive a restart or be shared between workers/instances, so LTI launches
+        # and Canvas authorization will fail intermittently until SECRET_KEY is set.
+        secret_key = secrets.token_hex(32)
         warnings.warn(
-            "SECRET_KEY is not set - falling back to an insecure, publicly known "
-            "default. Sessions can be forged. Set the SECRET_KEY environment "
-            "variable before deploying.",
+            "SECRET_KEY is not set (or is a placeholder). Using a random key "
+            "generated at startup: sessions will not survive restarts or be shared "
+            "between workers, so LTI launches and Canvas authorization will fail "
+            "intermittently. Set the SECRET_KEY environment variable before deploying.",
             RuntimeWarning,
         )
 
@@ -48,8 +53,6 @@ def create_app():
         "CACHE_DIR": CACHE_DIR,
         "CACHE_DEFAULT_TIMEOUT": 600,
         "SECRET_KEY": secret_key,
-        "SESSION_TYPE": "filesystem",
-        "SESSION_FILE_DIR": SESSION_DIR,
         "SESSION_COOKIE_NAME": "pylti1p3-flask-app-sessionid",
         "SESSION_COOKIE_HTTPONLY": True,
         "SESSION_COOKIE_SECURE": True,
